@@ -1,0 +1,6 @@
+node_modules/
+.husky/_/
+coverage/
+dist/
+build/
+*.log

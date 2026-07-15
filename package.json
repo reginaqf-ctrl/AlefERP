@@ -1,0 +1,28 @@
+{
+  "name": "alef-erp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Development quality toolchain for the Alef ERP Google Apps Script project.",
+  "scripts": {
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "quality": "npm run lint && npm run format:check",
+    "precommit": "lint-staged",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --max-warnings=0",
+      "prettier --check"
+    ],
+    "*.{json,md,yaml,yml}": "prettier --check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.7.0",
+    "globals": "^17.7.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "prettier": "^3.9.5"
+  }
+}
