@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Git Status",
+      "type": "shell",
+      "command": "git status",
+      "problemMatcher": []
+    },
+    {
+      "label": "Git Pull",
+      "type": "shell",
+      "command": "git pull",
+      "problemMatcher": []
+    },
+    {
+      "label": "Git Push",
+      "type": "shell",
+      "command": "git push",
+      "problemMatcher": []
+    },
+    {
+      "label": "Clasp Push",
+      "type": "shell",
+      "command": "clasp push",
+      "problemMatcher": []
+    },
+    {
+      "label": "Clasp Pull",
+      "type": "shell",
+      "command": "clasp pull",
+      "problemMatcher": []
+    }
+  ]
+}

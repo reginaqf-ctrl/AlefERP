@@ -1,0 +1,30 @@
+{
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+
+  "editor.wordWrap": "on",
+
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  "files.exclude": {
+    ".git": false
+  },
+
+  "javascript.updateImportsOnFileMove.enabled": "always",
+
+  "git.autofetch": true,
+
+  "explorer.confirmDelete": false,
+
+  "editor.rulers": [
+    80,
+    100
+  ]
+}
