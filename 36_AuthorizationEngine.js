@@ -245,31 +245,8 @@ function aerpAuthorize(request, options) {
 
       startedAt: startedAt
     });
-  } catch (error) {
-    if (!trace) {
-      trace = aerpCreateAuthorizationTrace_(
-        normalizedRequest,
-        aerpBuildSafeAuthorizationOptions_()
-      );
-    }
-
-    aerpAddAuthorizationTraceStep_(trace, 'ENGINE_ERROR', AERP_AUTHORIZATION_DECISION.DENY, {
-      message: AERP_AUTHORIZATION_PUBLIC_ERROR.ENGINE_ERROR
-    });
-
-    return aerpBuildAuthorizationDecision_({
-      decision: AERP_AUTHORIZATION_DECISION.DENY,
-      reason: AERP_AUTHORIZATION_REASON.ENGINE_ERROR,
-      request: normalizedRequest,
-      matchedRule: null,
-      validationErrors: [],
-      trace: trace,
-      startedAt: startedAt,
-      error: {
-        name: 'AuthorizationEngineError',
-        message: AERP_AUTHORIZATION_PUBLIC_ERROR.ENGINE_ERROR
-      }
-    });
+  } catch {
+    return aerpBuildEmergencyAuthorizationDeny_();
   }
 }
 
@@ -413,7 +390,7 @@ function aerpBuildAuthorizationDecision_(input) {
   return {
     ok: true,
 
-    decisionId: Utilities.getUuid(),
+    decisionId: aerpBuildSafeAuthorizationUuid_(),
 
     allowed: decision === AERP_AUTHORIZATION_DECISION.ALLOW,
 
@@ -475,13 +452,70 @@ function aerpCreateAuthorizationTrace_(request, options) {
   }
 
   return {
-    traceId: Utilities.getUuid(),
+    traceId: aerpBuildSafeAuthorizationUuid_(),
 
     requestId: request && request.requestId ? request.requestId : null,
 
     createdAt: new Date().toISOString(),
 
     steps: []
+  };
+}
+
+/**
+ * Construye un identificador interno sin permitir que un fallo de UUID escape.
+ * El factory opcional es exclusivamente interno y permite pruebas deterministas.
+ *
+ * @param {Function=} uuidFactory Factory interno opcional.
+ * @return {?string}
+ */
+function aerpBuildSafeAuthorizationUuid_(uuidFactory) {
+  try {
+    const uuid =
+      typeof uuidFactory === 'function'
+        ? uuidFactory()
+        : typeof Utilities !== 'undefined' && Utilities && typeof Utilities.getUuid === 'function'
+          ? Utilities.getUuid()
+          : null;
+
+    return typeof uuid === 'string' && uuid ? uuid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Construye el DENY de emergencia sin consultar opciones, solicitudes,
+ * normalizadores, trazas, builders ni dependencias externas.
+ *
+ * @return {Object}
+ */
+function aerpBuildEmergencyAuthorizationDeny_() {
+  return {
+    ok: false,
+    status: 'AUTHORIZATION_ENGINE_ERROR',
+    message: AERP_AUTHORIZATION_PUBLIC_ERROR.ENGINE_ERROR,
+    decisionId: null,
+    allowed: false,
+    decision: AERP_AUTHORIZATION_DECISION.DENY,
+    reason: AERP_AUTHORIZATION_REASON.ENGINE_ERROR,
+    reasonCode: AERP_AUTHORIZATION_REASON.ENGINE_ERROR,
+    requestId: null,
+    subject: null,
+    action: null,
+    resource: null,
+    matchedRule: null,
+    decisionSummary: null,
+    validationErrors: [],
+    trace: null,
+    error: {
+      name: 'AuthorizationEngineError',
+      message: AERP_AUTHORIZATION_PUBLIC_ERROR.ENGINE_ERROR
+    },
+    engineVersion: AERP_AUTHORIZATION_VERSION,
+    startedAt: null,
+    finishedAt: null,
+    durationMs: 0
   };
 }
 
@@ -1834,17 +1868,6 @@ function aerpBuildAuthorizationOptions_(options) {
  *
  * @return {Object}
  */
-function aerpBuildSafeAuthorizationOptions_() {
-  return {
-    valid: true,
-    defaultDecision: AERP_AUTHORIZATION_DECISION.DENY,
-    traceEnabled: AERP_AUTHORIZATION_DEFAULTS.traceEnabled,
-    stopOnFirstMatch: AERP_AUTHORIZATION_DEFAULTS.stopOnFirstMatch,
-    rules: [],
-    decisionPolicy: aerpBuildAuthorizationDecisionPolicy_()
-  };
-}
-
 /* ============================================================================
  * 10. NORMALIZATION HELPERS
  * ============================================================================
@@ -3096,4 +3119,41 @@ function testAuthorizationImmutableDefaultDeny() {
     status: 'IMMUTABLE_DEFAULT_DENY_OK',
     testedInvalidDefaults: invalidCases.length
   };
+}
+
+/**
+ * Comprueba que un fallo interno al generar UUID no escape ni contamine el
+ * DENY de emergencia con detalles de la excepción.
+ */
+function testAuthorizationEmergencyDeny() {
+  const privateExceptionText = 'PRIVATE_UUID_FACTORY_FAILURE';
+
+  const uuid = aerpBuildSafeAuthorizationUuid_(function () {
+    throw new Error(privateExceptionText);
+  });
+
+  if (uuid !== null) {
+    throw new Error('A failing internal UUID factory must return null.');
+  }
+
+  const result = aerpBuildEmergencyAuthorizationDeny_();
+
+  if (
+    result.ok !== false ||
+    result.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+    result.allowed !== false ||
+    result.reason !== AERP_AUTHORIZATION_REASON.ENGINE_ERROR ||
+    result.decisionId !== null ||
+    result.trace !== null
+  ) {
+    throw new Error('The emergency authorization response must be a dependency-free DENY.');
+  }
+
+  if (JSON.stringify(result).indexOf(privateExceptionText) !== -1) {
+    throw new Error('The emergency authorization response exposed private exception details.');
+  }
+
+  console.log('AERP-036 Emergency DENY Test: OK');
+
+  return result;
 }
