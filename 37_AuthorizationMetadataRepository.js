@@ -99,6 +99,21 @@ const AERP_AUTH_METADATA_REPOSITORY_DEFAULTS = Object.freeze({
  * @return {Object} Contexto de metadatos de autorización.
  */
 function aerpLoadAuthorizationMetadata(request, options) {
+  try {
+    return aerpLoadAuthorizationMetadataImpl_(request, options);
+  } catch (error) {
+    return aerpBuildAuthorizationMetadataUnexpectedError_();
+  }
+}
+
+/**
+ * Implementación interna del cargador público de metadata.
+ *
+ * @param {Object} request Solicitud de contexto.
+ * @param {Object=} options Opciones internas del repositorio.
+ * @return {Object} Contexto de metadatos de autorización.
+ */
+function aerpLoadAuthorizationMetadataImpl_(request, options) {
   const startedAt = new Date();
 
   const principalResult = aerpResolveTrustedAuthorizationPrincipal_(request, options);
@@ -170,9 +185,9 @@ function aerpLoadAuthorizationMetadata(request, options) {
 
       request: normalizedRequest,
 
-      roles: contextResult.roles || [],
+      roles: [],
 
-      modules: contextResult.modules || [],
+      modules: [],
 
       permissions: [],
 
@@ -354,15 +369,9 @@ function aerpResolveTrustedAuthorizationPrincipal_(request, options) {
     return {
       ok: false,
       verified: false,
-      status:
-        verificationResult && verificationResult.status
-          ? aerpNormalizeAuthorizationMetadataString_(verificationResult.status)
-          : 'UNAUTHENTICATED',
+      status: 'UNAUTHENTICATED',
       principal: null,
-      errors:
-        verificationResult && Array.isArray(verificationResult.errors)
-          ? verificationResult.errors
-          : ['Authentication evidence could not be verified.']
+      errors: ['Authentication evidence could not be verified.']
     };
   }
 
@@ -407,6 +416,30 @@ function aerpResolveTrustedAuthorizationPrincipal_(request, options) {
     status: 'TRUSTED_PRINCIPAL_RESOLVED',
     principal: Object.freeze(principal),
     errors: []
+  };
+}
+
+/**
+ * Construye un fallo público sanitizado para errores inesperados del repositorio.
+ *
+ * @return {Object} Resultado fail-closed sin detalles internos.
+ */
+function aerpBuildAuthorizationMetadataUnexpectedError_() {
+  const now = new Date().toISOString();
+
+  return {
+    ok: false,
+    status: 'AUTHORIZATION_METADATA_UNEXPECTED_ERROR',
+    request: {
+      companyId: ''
+    },
+    roles: [],
+    modules: [],
+    permissions: [],
+    errors: ['Authorization metadata could not be resolved.'],
+    repositoryVersion: AERP_AUTH_METADATA_REPOSITORY_VERSION,
+    startedAt: now,
+    finishedAt: now
   };
 }
 
@@ -806,23 +839,33 @@ function aerpResolveAuthorizationUserRoles_(userId, companyId, options) {
 
   const headers = tableResult.headers;
 
-  const userColumn = aerpResolveAuthorizationMetadataColumn_(headers, [
-    'ID_USUARIO',
-    'USER_ID',
-    'USUARIO_ID',
-    'ID_USER',
-    'USUARIO',
-    'EMAIL',
-    'CORREO'
-  ]);
+  const userColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
+    headers,
+    ['ID_USUARIO', 'USER_ID', 'USUARIO_ID', 'ID_USER', 'USUARIO', 'EMAIL', 'CORREO'],
+    'userId'
+  );
 
-  const roleColumn = aerpResolveAuthorizationMetadataColumn_(headers, [
-    'ID_ROL',
-    'ROLE_ID',
-    'ROL_ID',
-    'ROL',
-    'ROLE'
-  ]);
+  if (!userColumnResult.ok) {
+    return aerpBuildAuthorizationUserRoleSchemaError_(
+      userColumnResult,
+      normalizedUserId,
+      normalizedCompanyId
+    );
+  }
+
+  const roleColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
+    headers,
+    ['ID_ROL', 'ROLE_ID', 'ROL_ID', 'ROL', 'ROLE'],
+    'roleId'
+  );
+
+  if (!roleColumnResult.ok) {
+    return aerpBuildAuthorizationUserRoleSchemaError_(
+      roleColumnResult,
+      normalizedUserId,
+      normalizedCompanyId
+    );
+  }
 
   const companyColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
     headers,
@@ -831,65 +874,47 @@ function aerpResolveAuthorizationUserRoles_(userId, companyId, options) {
   );
 
   if (!companyColumnResult.ok) {
-    return {
-      ok: false,
-      status: companyColumnResult.status || 'USER_ROLE_SCHEMA_ERROR',
-      userId: normalizedUserId,
-      companyId: normalizedCompanyId,
-      roles: [],
-      assignments: [],
-      errors: Array.isArray(companyColumnResult.errors) ? companyColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationUserRoleSchemaError_(
+      companyColumnResult,
+      normalizedUserId,
+      normalizedCompanyId
+    );
   }
+
+  const activeColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
+    headers,
+    ['ACTIVO', 'ACTIVE', 'ES_ACTIVO', 'IS_ACTIVE', 'HABILITADO', 'ENABLED'],
+    'active'
+  );
+
+  if (!activeColumnResult.ok) {
+    return aerpBuildAuthorizationUserRoleSchemaError_(
+      activeColumnResult,
+      normalizedUserId,
+      normalizedCompanyId
+    );
+  }
+
+  const userColumn = userColumnResult.column;
+
+  const roleColumn = roleColumnResult.column;
 
   const companyColumn = companyColumnResult.column;
 
-  const activeColumn = aerpResolveAuthorizationMetadataColumn_(headers, [
-    'ACTIVO',
-    'ACTIVE',
-    'ES_ACTIVO',
-    'IS_ACTIVE',
-    'HABILITADO',
-    'ENABLED'
-  ]);
-
-  const missingColumns = [];
-
-  if (!userColumn) {
-    missingColumns.push('USER');
-  }
-
-  if (!roleColumn) {
-    missingColumns.push('ROLE');
-  }
-  if (!companyColumn) {
-    missingColumns.push('COMPANY');
-  }
-
-  if (missingColumns.length > 0) {
-    return {
-      ok: false,
-      status: 'USER_ROLE_SCHEMA_ERROR',
-      userId: normalizedUserId,
-      companyId: normalizedCompanyId,
-      roles: [],
-      assignments: [],
-      detectedHeaders: headers,
-      missingColumns: missingColumns,
-      errors: [
-        'Required CORE_USUARIO_ROL columns could not be resolved: ' + missingColumns.join(', ')
-      ]
-    };
-  }
+  const activeColumn = activeColumnResult.column;
 
   const normalizedUserLookup = normalizedUserId.toUpperCase();
 
   const normalizedCompanyLookup = normalizedCompanyId.toUpperCase();
 
-  const assignments = tableResult.rows.filter(function (row) {
+  const relevantRows = tableResult.rows.filter(function (row) {
     const rowUserId = aerpNormalizeAuthorizationMetadataString_(row[userColumn]).toUpperCase();
 
     const rowRoleId = aerpNormalizeAuthorizationMetadataString_(row[roleColumn]).toUpperCase();
+
+    const rowCompanyId = aerpNormalizeAuthorizationMetadataString_(
+      row[companyColumn]
+    ).toUpperCase();
 
     /*
      * Ignora filas sin datos funcionales de autorización.
@@ -902,23 +927,29 @@ function aerpResolveAuthorizationUserRoles_(userId, companyId, options) {
       return false;
     }
 
-    if (rowUserId !== normalizedUserLookup) {
-      return false;
-    }
+    return rowUserId === normalizedUserLookup && rowCompanyId === normalizedCompanyLookup;
+  });
 
-    if (activeColumn && !aerpIsAuthorizationMetadataActiveValue_(row[activeColumn])) {
-      return false;
-    }
+  const activationError = aerpFindAuthorizationMetadataActivationError_(
+    relevantRows,
+    activeColumn,
+    AERP_AUTH_METADATA_TABLES.USER_ROLE
+  );
 
-    const rowCompanyId = aerpNormalizeAuthorizationMetadataString_(
-      row[companyColumn]
-    ).toUpperCase();
+  if (activationError) {
+    return {
+      ok: false,
+      status: activationError.status,
+      userId: normalizedUserId,
+      companyId: normalizedCompanyId,
+      roles: [],
+      assignments: [],
+      errors: activationError.errors
+    };
+  }
 
-    if (rowCompanyId !== normalizedCompanyLookup) {
-      return false;
-    }
-
-    return true;
+  const assignments = relevantRows.filter(function (row) {
+    return aerpResolveAuthorizationMetadataActiveValue_(row[activeColumn]).active === true;
   });
 
   const roles = assignments
@@ -1127,7 +1158,7 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
     return {
       ok: false,
       status: activeColumnResult.status || 'ROLE_MODULE_SCHEMA_INVALID',
-      roles: uniqueRoles,
+      roles: [],
       companyId: normalizedCompanyId,
       modules: [],
       moduleCount: 0,
@@ -1153,52 +1184,45 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
     'MENU_VISIBILITY'
   ]);
 
-  const assignments = tableResult.rows
+  const relevantRows = tableResult.rows.filter(function (row) {
+    const rowRole = aerpNormalizeAuthorizationMetadataString_(row[roleColumn]).toUpperCase();
+
+    const rowModule = aerpNormalizeAuthorizationMetadataString_(row[moduleColumn]).toUpperCase();
+
+    const rowCompanyId = aerpNormalizeAuthorizationMetadataString_(
+      row[companyColumn]
+    ).toUpperCase();
+
+    return (
+      Boolean(rowRole && rowModule && rowCompanyId) &&
+      uniqueRoles.indexOf(rowRole) !== -1 &&
+      rowCompanyId === normalizedCompanyLookup
+    );
+  });
+
+  const activationError = aerpFindAuthorizationMetadataActivationError_(
+    relevantRows,
+    activeColumn,
+    AERP_AUTH_METADATA_TABLES.ROLE_MODULE
+  );
+
+  if (activationError) {
+    return {
+      ok: false,
+      status: activationError.status,
+      roles: [],
+      companyId: normalizedCompanyId,
+      modules: [],
+      moduleCount: 0,
+      moduleDetails: [],
+      assignments: [],
+      errors: activationError.errors
+    };
+  }
+
+  const assignments = relevantRows
     .filter(function (row) {
-      const rowRole = aerpNormalizeAuthorizationMetadataString_(row[roleColumn]).toUpperCase();
-
-      const rowModule = aerpNormalizeAuthorizationMetadataString_(row[moduleColumn]).toUpperCase();
-
-      const rowCompanyId = aerpNormalizeAuthorizationMetadataString_(
-        row[companyColumn]
-      ).toUpperCase();
-
-      /*
-       * Una relación de autorización requiere
-       * rol, módulo y empresa explícitos.
-       */
-      if (!rowRole || !rowModule || !rowCompanyId) {
-        return false;
-      }
-
-      /*
-       * El rol debe pertenecer al conjunto
-       * previamente resuelto para el usuario.
-       */
-      if (uniqueRoles.indexOf(rowRole) === -1) {
-        return false;
-      }
-
-      /*
-       * Tenant isolation obligatorio.
-       * Nunca se permite una relación
-       * perteneciente a otra empresa.
-       */
-      if (rowCompanyId !== normalizedCompanyLookup) {
-        return false;
-      }
-
-      /*
-       * La metadata debe estar activa.
-       *
-       * DT-SEC-06 endurecerá posteriormente
-       * la interpretación del valor ACTIVE.
-       */
-      if (!aerpIsAuthorizationMetadataActiveValue_(row[activeColumn])) {
-        return false;
-      }
-
-      return true;
+      return aerpResolveAuthorizationMetadataActiveValue_(row[activeColumn]).active === true;
     })
     .map(function (row) {
       return {
@@ -1419,11 +1443,15 @@ function aerpResolveAuthorizationContext_(userId, companyId, options) {
 
       companyId: normalizedCompanyId,
 
-      roles: roleResult.roles,
+      roles: [],
 
       modules: [],
 
       moduleDetails: [],
+
+      permissions: [],
+
+      authorizationRules: [],
 
       roleResult: roleResult,
 
@@ -1457,9 +1485,9 @@ function aerpResolveAuthorizationContext_(userId, companyId, options) {
 
       companyId: normalizedCompanyId,
 
-      roles: roleResult.roles,
+      roles: [],
 
-      modules: moduleResult.modules,
+      modules: [],
 
       permissions: [],
 
@@ -1770,8 +1798,8 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
       ok: false,
       status: activeColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
       companyId: normalizedCompanyId,
-      roles: uniqueRoles,
-      modules: uniqueModules,
+      roles: [],
+      modules: [],
       permissions: [],
       permissionCount: 0,
       assignments: [],
@@ -1818,52 +1846,49 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
     ])
   };
 
-  const assignments = tableResult.rows
+  const relevantRows = tableResult.rows.filter(function (row) {
+    const rowRole = aerpNormalizeAuthorizationMetadataString_(row[roleColumn]).toUpperCase();
+
+    const rowModule = aerpNormalizeAuthorizationMetadataString_(row[moduleColumn]).toUpperCase();
+
+    const rowCompanyId = aerpNormalizeAuthorizationMetadataString_(
+      row[companyColumn]
+    ).toUpperCase();
+
+    const rowPermissionId = aerpNormalizeAuthorizationMetadataString_(row[permissionIdColumn]);
+
+    return (
+      Boolean(rowPermissionId && rowRole && rowModule && rowCompanyId) &&
+      uniqueRoles.indexOf(rowRole) !== -1 &&
+      uniqueModules.indexOf(rowModule) !== -1 &&
+      rowCompanyId === normalizedCompanyLookup
+    );
+  });
+
+  const activationError = aerpFindAuthorizationMetadataActivationError_(
+    relevantRows,
+    activeColumn,
+    AERP_AUTH_METADATA_TABLES.PERMISSION
+  );
+
+  if (activationError) {
+    return {
+      ok: false,
+      status: activationError.status,
+      companyId: normalizedCompanyId,
+      roles: [],
+      modules: [],
+      permissions: [],
+      permissionCount: 0,
+      assignments: [],
+      actionColumns: {},
+      errors: activationError.errors
+    };
+  }
+
+  const assignments = relevantRows
     .filter(function (row) {
-      const rowRole = aerpNormalizeAuthorizationMetadataString_(row[roleColumn]).toUpperCase();
-
-      const rowModule = aerpNormalizeAuthorizationMetadataString_(row[moduleColumn]).toUpperCase();
-
-      const rowCompanyId = aerpNormalizeAuthorizationMetadataString_(
-        row[companyColumn]
-      ).toUpperCase();
-
-      const rowPermissionId = aerpNormalizeAuthorizationMetadataString_(row[permissionIdColumn]);
-
-      /*
-       * Una relación de permiso requiere
-       * identificador, rol, módulo y empresa.
-       */
-      if (!rowPermissionId || !rowRole || !rowModule || !rowCompanyId) {
-        return false;
-      }
-
-      if (uniqueRoles.indexOf(rowRole) === -1) {
-        return false;
-      }
-
-      if (uniqueModules.indexOf(rowModule) === -1) {
-        return false;
-      }
-
-      /*
-       * Tenant isolation obligatorio.
-       */
-      if (rowCompanyId !== normalizedCompanyLookup) {
-        return false;
-      }
-
-      /*
-       * La fila debe estar activa.
-       *
-       * DT-SEC-06 endurecerá después
-       * la semántica exacta de ACTIVE.
-       */
-      if (!aerpIsAuthorizationMetadataActiveValue_(row[activeColumn])) {
-        return false;
-      }
-
-      return true;
+      return aerpResolveAuthorizationMetadataActiveValue_(row[activeColumn]).active === true;
     })
     .map(function (row) {
       const actions = {};
@@ -2056,6 +2081,21 @@ function aerpBuildAuthorizationRulesFromPermissions_(permissions, options) {
  * @return {Object} Resultado integrado de autorización.
  */
 function aerpAuthorizeFromMetadata(request, options) {
+  try {
+    return aerpAuthorizeFromMetadataImpl_(request, options);
+  } catch (error) {
+    return aerpBuildMetadataAuthorizationUnexpectedError_();
+  }
+}
+
+/**
+ * Implementación interna de la autorización integrada basada en metadata.
+ *
+ * @param {Object} request Solicitud de autorización basada en metadatos.
+ * @param {Object=} options Opciones internas de ejecución.
+ * @return {Object} Resultado integrado de autorización.
+ */
+function aerpAuthorizeFromMetadataImpl_(request, options) {
   const startedAt = new Date();
 
   const source = request && typeof request === 'object' ? request : {};
@@ -2259,6 +2299,26 @@ function aerpAuthorizeFromMetadata(request, options) {
   };
 }
 
+/**
+ * Construye un DENY sanitizado para errores inesperados de autorización.
+ *
+ * @return {Object} Resultado fail-closed sin detalles internos.
+ */
+function aerpBuildMetadataAuthorizationUnexpectedError_() {
+  const now = new Date().toISOString();
+
+  return {
+    ok: false,
+    status: 'METADATA_AUTHORIZATION_UNEXPECTED_ERROR',
+    decision: 'DENY',
+    allowed: false,
+    trustedPrincipal: null,
+    errors: ['Metadata authorization could not be evaluated.'],
+    startedAt: now,
+    finishedAt: now
+  };
+}
+
 /* ============================================================================
  * 8. COLUMN RESOLVER
  * ============================================================================
@@ -2355,6 +2415,130 @@ function aerpResolveAuthorizationMetadataSecurityColumn_(headers, candidates, fi
 }
 
 /**
+ * Construye un fallo de schema fail-closed para CORE_USUARIO_ROL.
+ *
+ * @param {Object} columnResult Resultado del resolver estricto.
+ * @param {string} userId Usuario normalizado.
+ * @param {string} companyId Empresa normalizada.
+ * @return {Object} Resultado sin asignaciones parciales.
+ */
+function aerpBuildAuthorizationUserRoleSchemaError_(columnResult, userId, companyId) {
+  const source = columnResult && typeof columnResult === 'object' ? columnResult : {};
+
+  return {
+    ok: false,
+    status: source.status || 'USER_ROLE_SCHEMA_ERROR',
+    userId: userId,
+    companyId: companyId,
+    roles: [],
+    assignments: [],
+    errors: Array.isArray(source.errors) ? source.errors : ['CORE_USUARIO_ROL schema is invalid.']
+  };
+}
+
+/**
+ * Interpreta de forma estricta un valor de activación.
+ *
+ * @param {*} value Valor de metadata.
+ * @return {{ok: boolean, active: boolean, status: string, errors: string[]}}
+ */
+function aerpResolveAuthorizationMetadataActiveValue_(value) {
+  if (value === true || value === 1) {
+    return {
+      ok: true,
+      active: true,
+      status: 'VALID_ACTIVE_VALUE',
+      errors: []
+    };
+  }
+
+  if (value === false || value === 0) {
+    return {
+      ok: true,
+      active: false,
+      status: 'VALID_INACTIVE_VALUE',
+      errors: []
+    };
+  }
+
+  if (value === null || value === undefined) {
+    return {
+      ok: false,
+      active: false,
+      status: 'INVALID_AUTHORIZATION_METADATA_ACTIVE_VALUE',
+      errors: ['Authorization metadata activation value is invalid.']
+    };
+  }
+
+  const normalizedValue = aerpNormalizeAuthorizationMetadataString_(value).toUpperCase();
+
+  if (!normalizedValue) {
+    return {
+      ok: false,
+      active: false,
+      status: 'INVALID_AUTHORIZATION_METADATA_ACTIVE_VALUE',
+      errors: ['Authorization metadata activation value is invalid.']
+    };
+  }
+
+  if (['1', 'SI', 'SÍ', 'YES', 'Y', 'ACTIVO', 'ACTIVE', 'TRUE'].indexOf(normalizedValue) !== -1) {
+    return {
+      ok: true,
+      active: true,
+      status: 'VALID_ACTIVE_VALUE',
+      errors: []
+    };
+  }
+
+  if (['0', 'NO', 'N', 'INACTIVO', 'INACTIVE', 'FALSE'].indexOf(normalizedValue) !== -1) {
+    return {
+      ok: true,
+      active: false,
+      status: 'VALID_INACTIVE_VALUE',
+      errors: []
+    };
+  }
+
+  return {
+    ok: false,
+    active: false,
+    status: 'INVALID_AUTHORIZATION_METADATA_ACTIVE_VALUE',
+    errors: ['Authorization metadata activation value is invalid.']
+  };
+}
+
+/**
+ * Detecta valores de activación inválidos antes de devolver resultados parciales.
+ *
+ * @param {Object[]} rows Filas relevantes para el tenant y sujeto.
+ * @param {string} activeColumn Columna de activación resuelta.
+ * @param {string} tableName Tabla de origen.
+ * @return {Object|null} Error sanitizado o null.
+ */
+function aerpFindAuthorizationMetadataActivationError_(rows, activeColumn, tableName) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+
+  for (let index = 0; index < sourceRows.length; index += 1) {
+    const activationResult = aerpResolveAuthorizationMetadataActiveValue_(
+      sourceRows[index][activeColumn]
+    );
+
+    if (!activationResult.ok) {
+      return {
+        status: 'INVALID_AUTHORIZATION_METADATA_ACTIVE_VALUE',
+        errors: [
+          'Invalid activation metadata in ' +
+            aerpNormalizeAuthorizationMetadataString_(tableName) +
+            '.'
+        ]
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Determina si un valor representa un registro activo.
  *
  * Valores considerados activos:
@@ -2367,35 +2551,13 @@ function aerpResolveAuthorizationMetadataSecurityColumn_(headers, candidates, fi
  *   ACTIVO
  *   ACTIVE
  *
- * Cuando no existe una columna de estado, el registro se considera activo.
- *
  * @param {*} value Valor recibido.
  * @return {boolean}
  */
 function aerpIsAuthorizationMetadataActiveValue_(value) {
-  if (value === null || value === undefined || value === '') {
-    return true;
-  }
+  const result = aerpResolveAuthorizationMetadataActiveValue_(value);
 
-  if (value === true) {
-    return true;
-  }
-
-  if (value === false) {
-    return false;
-  }
-
-  if (Number(value) === 1) {
-    return true;
-  }
-
-  if (Number(value) === 0) {
-    return false;
-  }
-
-  const normalizedValue = aerpNormalizeAuthorizationMetadataString_(value).toUpperCase();
-
-  return ['SI', 'SÍ', 'YES', 'Y', 'ACTIVO', 'ACTIVE', 'TRUE'].indexOf(normalizedValue) !== -1;
+  return result.ok === true && result.active === true;
 }
 
 /* ============================================================================
@@ -2423,6 +2585,32 @@ function aerpNormalizeAuthorizationMetadataString_(value) {
  */
 
 /**
+ * Comprueba el modo de pruebas mediante una propiedad exclusiva del backend.
+ * Cualquier ausencia, valor distinto o excepción mantiene las pruebas deshabilitadas.
+ *
+ * @return {boolean} true únicamente para el valor exacto ENABLED.
+ */
+function aerpIsAuthorizationTestModeEnabled_() {
+  try {
+    return (
+      PropertiesService.getScriptProperties().getProperty('AERP_AUTHORIZATION_TEST_MODE') ===
+      'ENABLED'
+    );
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Impide ejecutar entry points de prueba cuando el modo backend está deshabilitado.
+ */
+function aerpRequireAuthorizationTestMode_() {
+  if (!aerpIsAuthorizationTestModeEnabled_()) {
+    throw new Error('AUTHORIZATION_TEST_MODE_DISABLED');
+  }
+}
+
+/**
  * Verificador inyectable utilizado exclusivamente por las pruebas de AERP-037.
  * Simula una autenticación ya validada por el backend y nunca consulta
  * request.userId.
@@ -2431,6 +2619,16 @@ function aerpNormalizeAuthorizationMetadataString_(value) {
  * @return {Object}
  */
 function aerpTestTrustedPrincipalVerifier_(input) {
+  if (!aerpIsAuthorizationTestModeEnabled_()) {
+    return {
+      ok: false,
+      verified: false,
+      status: 'UNAUTHENTICATED',
+      principal: null,
+      errors: ['Authentication evidence could not be verified.']
+    };
+  }
+
   if (
     !input ||
     !input.authentication ||
@@ -2485,6 +2683,8 @@ function aerpBuildAuthorizationTestAuthentication_() {
  * Comprueba el contrato inicial del repositorio.
  */
 function testAuthorizationMetadataRepositoryFoundation() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpLoadAuthorizationMetadata(
     {
       companyId: 'EMPRESA_001',
@@ -2500,8 +2700,12 @@ function testAuthorizationMetadataRepositoryFoundation() {
     throw new Error('Authorization Metadata Repository Foundation must return ok=true.');
   }
 
-  if (result.status !== 'FOUNDATION_READY') {
-    throw new Error('Expected status FOUNDATION_READY.');
+  if (result.status !== 'AUTHORIZATION_CONTEXT_EMPTY') {
+    throw new Error('Expected status AUTHORIZATION_CONTEXT_EMPTY.');
+  }
+
+  if (result.roles.length !== 0 || result.modules.length !== 0 || result.permissions.length !== 0) {
+    throw new Error('Expected empty authorization metadata for EMPRESA_001.');
   }
 
   if (result.request.userId !== 'usuario.test@alef.local') {
@@ -2517,6 +2721,8 @@ function testAuthorizationMetadataRepositoryFoundation() {
  * Comprueba que una solicitud sin companyId sea rechazada.
  */
 function testAuthorizationMetadataRepositoryInvalidRequest() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpLoadAuthorizationMetadata(
     {
       authentication: aerpBuildAuthorizationTestAuthentication_()
@@ -2549,6 +2755,8 @@ function testAuthorizationMetadataRepositoryInvalidRequest() {
  * Utiliza CORE_USUARIO_ROL como tabla de prueba inicial.
  */
 function testAuthorizationMetadataTableReader() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpReadAuthorizationMetadataTable_(AERP_AUTH_METADATA_TABLES.USER_ROLE);
 
   console.log(JSON.stringify(result, null, 2));
@@ -2578,6 +2786,8 @@ function testAuthorizationMetadataTableReader() {
  * Comprueba el comportamiento ante una tabla inexistente.
  */
 function testAuthorizationMetadataTableReaderMissingTable() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpReadAuthorizationMetadataTable_('AERP_TABLE_DOES_NOT_EXIST');
 
   console.log(JSON.stringify(result, null, 2));
@@ -2601,6 +2811,8 @@ function testAuthorizationMetadataTableReaderMissingTable() {
  * No requiere conocer previamente un usuario válido.
  */
 function testAuthorizationUserRoleSchema() {
+  aerpRequireAuthorizationTestMode_();
+
   const tableResult = aerpReadAuthorizationMetadataTable_(AERP_AUTH_METADATA_TABLES.USER_ROLE);
 
   if (!tableResult.ok) {
@@ -2676,6 +2888,8 @@ function testAuthorizationUserRoleSchema() {
  * y comprueba que el User Role Resolver pueda resolver sus roles.
  */
 function testAuthorizationUserRoleResolver() {
+  aerpRequireAuthorizationTestMode_();
+
   const tableResult = aerpReadAuthorizationMetadataTable_(AERP_AUTH_METADATA_TABLES.USER_ROLE);
 
   if (!tableResult.ok) {
@@ -2790,6 +3004,8 @@ function testAuthorizationUserRoleResolver() {
  * Busca filas con USUARIO y ROL informados, sin exigir que ACTIVO sea true.
  */
 function testAuthorizationUserRoleDataDiagnostic() {
+  aerpRequireAuthorizationTestMode_();
+
   const tableResult = aerpReadAuthorizationMetadataTable_(AERP_AUTH_METADATA_TABLES.USER_ROLE);
 
   if (!tableResult.ok) {
@@ -2894,6 +3110,8 @@ function testAuthorizationUserRoleDataDiagnostic() {
  * - estructura necesaria para el Role Module Resolver.
  */
 function testAuthorizationRoleModuleSchema() {
+  aerpRequireAuthorizationTestMode_();
+
   const tableResult = aerpReadAuthorizationMetadataTable_(AERP_AUTH_METADATA_TABLES.ROLE_MODULE);
 
   if (!tableResult.ok) {
@@ -2926,6 +3144,8 @@ function testAuthorizationRoleModuleSchema() {
  * MODULO_TEST_AUTORIZACION
  */
 function testAuthorizationRoleModuleResolver() {
+  aerpRequireAuthorizationTestMode_();
+
   const roles = ['ROL_TEST_AUTORIZACION'];
 
   const result = aerpResolveAuthorizationRoleModules_(roles, 'EMPRESA_TEST', {});
@@ -2968,6 +3188,8 @@ function testAuthorizationRoleModuleResolver() {
  * @return {Object}
  */
 function testAuthorizationRoleModulesCrossTenantDenied() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationRoleModules_(
     ['ROL_TEST_AUTORIZACION'],
     'EMPRESA_OTRA',
@@ -3005,6 +3227,8 @@ function testAuthorizationRoleModulesCrossTenantDenied() {
  * modules[]
  */
 function testAuthorizationContextResolver() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationContext_('usuario.test@alef.local', 'EMPRESA_TEST');
 
   console.log(JSON.stringify(result, null, 2));
@@ -3043,6 +3267,8 @@ function testAuthorizationContextResolver() {
  * el contexto completo de autorización.
  */
 function testAuthorizationMetadataRepositoryIntegrated() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpLoadAuthorizationMetadata(
     {
       companyId: 'EMPRESA_TEST',
@@ -3085,6 +3311,8 @@ function testAuthorizationMetadataRepositoryIntegrated() {
  * - estructura necesaria para construir el Permission Resolver.
  */
 function testAuthorizationPermissionSchema() {
+  aerpRequireAuthorizationTestMode_();
+
   const tableResult = aerpReadAuthorizationMetadataTable_(AERP_AUTH_METADATA_TABLES.PERMISSION);
 
   if (!tableResult.ok) {
@@ -3112,6 +3340,8 @@ function testAuthorizationPermissionSchema() {
  * Prueba funcional del Permission Resolver.
  */
 function testAuthorizationPermissionResolver() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationPermissions_(
     ['ROL_TEST_AUTORIZACION'],
     ['MODULO_TEST_AUTORIZACION'],
@@ -3175,6 +3405,8 @@ function testAuthorizationPermissionResolver() {
  * @return {Object}
  */
 function testAuthorizationPermissionsRequiresCompanyId() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationPermissions_(
     ['ROL_TEST_AUTORIZACION'],
     ['MODULO_TEST_AUTORIZACION'],
@@ -3198,6 +3430,8 @@ function testAuthorizationPermissionsRequiresCompanyId() {
  * @return {Object}
  */
 function testAuthorizationPermissionsCrossTenantDenied() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationPermissions_(
     ['ROL_TEST_AUTORIZACION'],
     ['MODULO_TEST_AUTORIZACION'],
@@ -3240,6 +3474,8 @@ function testAuthorizationPermissionsCrossTenantDenied() {
  * Authorization Rules
  */
 function testAuthorizationPermissionRuleAdapter() {
+  aerpRequireAuthorizationTestMode_();
+
   const permissionResult = aerpResolveAuthorizationPermissions_(
     ['ROL_TEST_AUTORIZACION'],
     ['MODULO_TEST_AUTORIZACION'],
@@ -3322,6 +3558,8 @@ function testAuthorizationPermissionRuleAdapter() {
  * Authorization Rules
  */
 function testAuthorizationContextWithPermissions() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationContext_('usuario.test@alef.local', 'EMPRESA_TEST');
 
   console.log(JSON.stringify(result, null, 2));
@@ -3383,6 +3621,8 @@ function testAuthorizationContextWithPermissions() {
  * ALLOW
  */
 function testAuthorizationMetadataEndToEndEdit() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpAuthorizeFromMetadata(
     {
       companyId: 'EMPRESA_TEST',
@@ -3441,6 +3681,8 @@ function testAuthorizationMetadataEndToEndEdit() {
  * DENY
  */
 function testAuthorizationMetadataEndToEndDelete() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpAuthorizeFromMetadata(
     {
       companyId: 'EMPRESA_TEST',
@@ -3489,6 +3731,8 @@ function testAuthorizationMetadataEndToEndDelete() {
   return result;
 }
 function testAuthorizationMetadataDuplicateHeaders() {
+  aerpRequireAuthorizationTestMode_();
+
   const headers = aerpNormalizeAuthorizationMetadataHeaders_(['ACTIVO', 'activo'], {
     caseInsensitiveHeaders: true
   });
@@ -3504,6 +3748,8 @@ function testAuthorizationMetadataDuplicateHeaders() {
   return result;
 }
 function testAuthorizationMetadataAmbiguousCompanyAliases() {
+  aerpRequireAuthorizationTestMode_();
+
   const headers = ['ID_EMPRESA', 'COMPANY_ID', 'ACTIVO'];
 
   const result = aerpValidateAuthorizationMetadataFieldAliases_(
@@ -3521,6 +3767,8 @@ function testAuthorizationMetadataAmbiguousCompanyAliases() {
   return result;
 }
 function testAuthorizationUserRolesTenantIsolation() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationUserRoles_('USER_TEST', 'COMPANY_B', {});
 
   if (result.ok !== true && result.status !== 'USER_ROLE_SCHEMA_ERROR') {
@@ -3532,6 +3780,8 @@ function testAuthorizationUserRolesTenantIsolation() {
   return result;
 }
 function testAuthorizationUserRolesRequiresCompanyId() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationUserRoles_('USER_TEST', '', {});
 
   if (result.ok !== false || result.status !== 'INVALID_COMPANY_ID') {
@@ -3543,6 +3793,8 @@ function testAuthorizationUserRolesRequiresCompanyId() {
   return result;
 }
 function testAuthorizationMetadataCompanyColumnRequired() {
+  aerpRequireAuthorizationTestMode_();
+
   const headers = ['ID_USUARIO', 'ID_ROL', 'ACTIVO'];
 
   const companyColumn = aerpResolveAuthorizationMetadataColumn_(headers, [
@@ -3571,6 +3823,8 @@ function testAuthorizationMetadataCompanyColumnRequired() {
  * @return {Object}
  */
 function testAuthorizationMetadataSecurityColumnSingleAlias() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationMetadataSecurityColumn_(
     ['ID_USUARIO', 'ID_ROL', 'ID_EMPRESA', 'ACTIVO'],
     ['ID_EMPRESA', 'COMPANY_ID', 'EMPRESA_ID', 'EMPRESA', 'COMPANY'],
@@ -3597,6 +3851,8 @@ function testAuthorizationMetadataSecurityColumnSingleAlias() {
  * @return {Object}
  */
 function testAuthorizationMetadataSecurityColumnAmbiguousAliases() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationMetadataSecurityColumn_(
     ['ID_USUARIO', 'ID_ROL', 'ID_EMPRESA', 'COMPANY_ID', 'ACTIVO'],
     ['ID_EMPRESA', 'COMPANY_ID', 'EMPRESA_ID', 'EMPRESA', 'COMPANY'],
@@ -3623,6 +3879,8 @@ function testAuthorizationMetadataSecurityColumnAmbiguousAliases() {
  * @return {Object}
  */
 function testAuthorizationUserRolesValidTenant() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationUserRoles_('usuario.test@alef.local', 'EMPRESA_TEST', {});
 
   if (result.ok !== true) {
@@ -3644,6 +3902,8 @@ function testAuthorizationUserRolesValidTenant() {
  * @return {Object}
  */
 function testAuthorizationUserRolesCrossTenantDenied() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationUserRoles_('usuario.test@alef.local', 'EMPRESA_OTRA', {});
 
   if (result.ok !== true) {
@@ -3670,6 +3930,8 @@ function testAuthorizationUserRolesCrossTenantDenied() {
  * @return {Object}
  */
 function testAuthorizationContextRequiresCompanyId() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpResolveAuthorizationContext_('usuario.test@alef.local', '', {});
 
   if (result.ok !== false || result.status !== 'INVALID_COMPANY_ID') {
@@ -3699,6 +3961,8 @@ function testAuthorizationContextRequiresCompanyId() {
  * @return {Object}
  */
 function testAuthorizationContextCompanyIdOverrideDenied() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpAuthorizeFromMetadata(
     {
       companyId: 'EMPRESA_TEST',
@@ -3740,6 +4004,8 @@ function testAuthorizationContextCompanyIdOverrideDenied() {
  * @return {Object}
  */
 function testAuthorizationContextCompanyIdPreserved() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpAuthorizeFromMetadata(
     {
       companyId: 'EMPRESA_TEST',
@@ -3774,6 +4040,8 @@ function testAuthorizationContextCompanyIdPreserved() {
  * @return {Object}
  */
 function testAuthorizationMetadataEndToEndCrossTenantDenied() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpAuthorizeFromMetadata(
     {
       companyId: 'EMPRESA_OTRA',
@@ -3808,6 +4076,8 @@ function testAuthorizationMetadataEndToEndCrossTenantDenied() {
  * @return {Object}
  */
 function testAuthorizationTrustedPrincipalVerifierRequired() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpAuthorizeFromMetadata({
     userId: 'usuario.test@alef.local',
     companyId: 'EMPRESA_TEST',
@@ -3835,6 +4105,8 @@ function testAuthorizationTrustedPrincipalVerifierRequired() {
  * @return {Object}
  */
 function testAuthorizationInvalidAuthenticationDenied() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpAuthorizeFromMetadata(
     {
       companyId: 'EMPRESA_TEST',
@@ -3868,6 +4140,8 @@ function testAuthorizationInvalidAuthenticationDenied() {
  * @return {Object}
  */
 function testAuthorizationRequestUserIdCannotImpersonate() {
+  aerpRequireAuthorizationTestMode_();
+
   const result = aerpAuthorizeFromMetadata(
     {
       userId: 'attacker-controlled-user',
@@ -3901,6 +4175,8 @@ function testAuthorizationRequestUserIdCannotImpersonate() {
  * @return {Object}
  */
 function testAuthorizationInvalidTrustedPrincipalDenied() {
+  aerpRequireAuthorizationTestMode_();
+
   const incompleteVerifier = function () {
     return {
       ok: true,
@@ -3937,4 +4213,213 @@ function testAuthorizationInvalidTrustedPrincipalDenied() {
   console.log('AERP-037 Invalid Trusted Principal DENY Test: OK');
 
   return result;
+}
+
+/**
+ * Comprueba la resolución estricta de columnas críticas de CORE_USUARIO_ROL.
+ *
+ * @return {Object}
+ */
+function testAuthorizationUserRoleStrictSecurityColumns() {
+  aerpRequireAuthorizationTestMode_();
+
+  const fields = [
+    {
+      name: 'userId',
+      candidates: ['ID_USUARIO', 'USER_ID']
+    },
+    {
+      name: 'roleId',
+      candidates: ['ID_ROL', 'ROLE_ID']
+    },
+    {
+      name: 'companyId',
+      candidates: ['ID_EMPRESA', 'COMPANY_ID']
+    },
+    {
+      name: 'active',
+      candidates: ['ACTIVO', 'ACTIVE']
+    }
+  ];
+
+  fields.forEach(function (field) {
+    const missing = aerpResolveAuthorizationMetadataSecurityColumn_(
+      [],
+      field.candidates,
+      field.name
+    );
+
+    const ambiguous = aerpResolveAuthorizationMetadataSecurityColumn_(
+      field.candidates,
+      field.candidates,
+      field.name
+    );
+
+    if (missing.ok !== false || missing.status !== 'REQUIRED_SECURITY_FIELD_MISSING') {
+      throw new Error('Expected missing strict security field: ' + field.name);
+    }
+
+    if (ambiguous.ok !== false || ambiguous.status !== 'AMBIGUOUS_SECURITY_FIELD') {
+      throw new Error('Expected ambiguous strict security field: ' + field.name);
+    }
+  });
+
+  return {
+    ok: true,
+    status: 'USER_ROLE_STRICT_SECURITY_COLUMNS_TESTED'
+  };
+}
+
+/**
+ * Comprueba valores activos, inactivos e inválidos sin semántica implícita.
+ *
+ * @return {Object}
+ */
+function testAuthorizationMetadataStrictActivationValues() {
+  aerpRequireAuthorizationTestMode_();
+
+  const activeValues = [true, 1, '1', 'SI', 'SÍ', 'YES', 'Y', 'ACTIVO', 'ACTIVE', 'TRUE'];
+  const inactiveValues = [false, 0, '0', 'NO', 'N', 'INACTIVO', 'INACTIVE', 'FALSE'];
+  const invalidValues = ['', '   ', null, undefined, 'UNKNOWN'];
+
+  activeValues.forEach(function (value) {
+    const result = aerpResolveAuthorizationMetadataActiveValue_(value);
+
+    if (!result.ok || result.active !== true) {
+      throw new Error('Expected an explicitly active metadata value.');
+    }
+  });
+
+  inactiveValues.forEach(function (value) {
+    const result = aerpResolveAuthorizationMetadataActiveValue_(value);
+
+    if (!result.ok || result.active !== false) {
+      throw new Error('Expected an explicitly inactive metadata value.');
+    }
+  });
+
+  invalidValues.forEach(function (value) {
+    const result = aerpResolveAuthorizationMetadataActiveValue_(value);
+
+    if (result.ok || result.active !== false) {
+      throw new Error('Expected an invalid metadata activation value to fail closed.');
+    }
+  });
+
+  return {
+    ok: true,
+    status: 'STRICT_ACTIVATION_VALUES_TESTED'
+  };
+}
+
+/**
+ * Comprueba que un error de activación se detecte antes de producir resultados parciales.
+ *
+ * @return {Object}
+ */
+function testAuthorizationMetadataInvalidActivationNoPartialResults() {
+  aerpRequireAuthorizationTestMode_();
+
+  const result = aerpFindAuthorizationMetadataActivationError_(
+    [
+      {
+        ACTIVE: true
+      },
+      {
+        ACTIVE: ''
+      }
+    ],
+    'ACTIVE',
+    AERP_AUTH_METADATA_TABLES.USER_ROLE
+  );
+
+  if (!result || result.status !== 'INVALID_AUTHORIZATION_METADATA_ACTIVE_VALUE') {
+    throw new Error('Expected invalid activation to abort metadata resolution.');
+  }
+
+  return {
+    ok: true,
+    status: 'INVALID_ACTIVATION_NO_PARTIAL_RESULTS_TESTED'
+  };
+}
+
+/**
+ * Comprueba que los detalles controlados por el verificador no sean públicos.
+ *
+ * @return {Object}
+ */
+function testAuthorizationVerifierFailureSanitized() {
+  aerpRequireAuthorizationTestMode_();
+
+  const secretMarker = 'SECRET_TOKEN_COOKIE_HEADER_PROVIDER_PAYLOAD';
+  const result = aerpAuthorizeFromMetadata(
+    {
+      companyId: 'EMPRESA_TEST',
+      action: 'EDIT',
+      moduleId: 'MODULO_TEST_AUTORIZACION',
+      authentication: {
+        token: secretMarker
+      }
+    },
+    {
+      trustedPrincipalVerifier: function () {
+        return {
+          ok: false,
+          verified: false,
+          status: secretMarker,
+          errors: [secretMarker],
+          claims: {
+            token: secretMarker
+          }
+        };
+      }
+    }
+  );
+
+  if (
+    result.status !== 'UNAUTHENTICATED' ||
+    result.decision !== 'DENY' ||
+    result.allowed !== false ||
+    JSON.stringify(result).indexOf(secretMarker) !== -1
+  ) {
+    throw new Error('Expected verifier failure details to be sanitized.');
+  }
+
+  return result;
+}
+
+/**
+ * Comprueba los límites públicos ante una excepción previa a la autorización.
+ *
+ * @return {Object}
+ */
+function testAuthorizationPublicEntryPointsFailClosed() {
+  aerpRequireAuthorizationTestMode_();
+
+  const throwingOptions = {};
+
+  Object.defineProperty(throwingOptions, 'trustedPrincipalVerifier', {
+    get: function () {
+      throw new Error('SECRET_INTERNAL_EXCEPTION_DETAIL');
+    }
+  });
+
+  const metadataResult = aerpLoadAuthorizationMetadata({}, throwingOptions);
+  const authorizationResult = aerpAuthorizeFromMetadata({}, throwingOptions);
+  const serializedResults = JSON.stringify([metadataResult, authorizationResult]);
+
+  if (
+    metadataResult.status !== 'AUTHORIZATION_METADATA_UNEXPECTED_ERROR' ||
+    authorizationResult.status !== 'METADATA_AUTHORIZATION_UNEXPECTED_ERROR' ||
+    authorizationResult.decision !== 'DENY' ||
+    authorizationResult.allowed !== false ||
+    serializedResults.indexOf('SECRET_INTERNAL_EXCEPTION_DETAIL') !== -1
+  ) {
+    throw new Error('Expected public entry points to fail closed without exception details.');
+  }
+
+  return {
+    metadata: metadataResult,
+    authorization: authorizationResult
+  };
 }
