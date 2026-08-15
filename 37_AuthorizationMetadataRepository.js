@@ -88,8 +88,7 @@ const AERP_AUTH_METADATA_REPOSITORY_DEFAULTS = Object.freeze({
  *
  * Esta función será el punto de entrada principal del repositorio.
  *
- * En esta primera versión Foundation todavía no consulta las hojas.
- * Únicamente define y valida el contrato público del componente.
+ * Resuelve metadata real desde las tablas de autorización configuradas.
  *
  * @param {Object} request Solicitud de contexto.
  * @param {*} request.authentication Evidencia opaca de autenticación.
@@ -174,7 +173,7 @@ function aerpLoadAuthorizationMetadataImpl_(request, options) {
   const contextResult = aerpResolveAuthorizationContext_(
     normalizedRequest.userId,
     normalizedRequest.companyId,
-    repositoryOptions
+    options
   );
 
   if (!contextResult.ok) {
@@ -191,7 +190,9 @@ function aerpLoadAuthorizationMetadataImpl_(request, options) {
 
       permissions: [],
 
-      context: contextResult,
+      assignments: [],
+
+      authorizationRules: [],
 
       errors: contextResult.errors || [],
 
@@ -499,6 +500,16 @@ function aerpReadAuthorizationMetadataTable_(tableName, options) {
     };
   }
 
+  const injectedResult = aerpReadInjectedAuthorizationMetadataTable_(
+    normalizedTableName,
+    options,
+    repositoryOptions
+  );
+
+  if (injectedResult) {
+    return injectedResult;
+  }
+
   const spreadsheet = aerpGetAuthorizationMetadataSpreadsheet_();
 
   if (!spreadsheet) {
@@ -610,6 +621,126 @@ function aerpReadAuthorizationMetadataTable_(tableName, options) {
     ok: true,
     status: 'TABLE_READ',
     tableName: normalizedTableName,
+    headers: headers,
+    rows: rows,
+    rowCount: rows.length,
+    errors: []
+  };
+}
+
+/**
+ * Lee metadata sintética exclusivamente para pruebas backend habilitadas.
+ * La inyección solo se acepta desde options internas y nunca desde request.
+ *
+ * @param {string} tableName Tabla solicitada.
+ * @param {Object=} options Opciones internas.
+ * @param {Object} repositoryOptions Opciones normalizadas.
+ * @return {Object|null} Resultado sintético, rechazo fail-closed o null.
+ */
+function aerpReadInjectedAuthorizationMetadataTable_(tableName, options, repositoryOptions) {
+  const source = options && typeof options === 'object' ? options : {};
+
+  if (!Object.prototype.hasOwnProperty.call(source, 'testAuthorizationMetadataTables')) {
+    return null;
+  }
+
+  if (!aerpIsAuthorizationTestModeEnabled_()) {
+    return {
+      ok: false,
+      status: 'TEST_METADATA_INJECTION_DISABLED',
+      tableName: tableName,
+      headers: [],
+      rows: [],
+      rowCount: 0,
+      errors: ['Authorization metadata test injection is disabled.']
+    };
+  }
+
+  const tables = source.testAuthorizationMetadataTables;
+
+  if (
+    !tables ||
+    typeof tables !== 'object' ||
+    !Object.prototype.hasOwnProperty.call(tables, tableName)
+  ) {
+    return {
+      ok: false,
+      status: 'TEST_METADATA_TABLE_NOT_CONFIGURED',
+      tableName: tableName,
+      headers: [],
+      rows: [],
+      rowCount: 0,
+      errors: ['Authorization metadata test table is not configured.']
+    };
+  }
+
+  return aerpBuildAuthorizationMetadataTableResultFromValues_(
+    tableName,
+    tables[tableName],
+    repositoryOptions
+  );
+}
+
+/**
+ * Construye un resultado de tabla a partir de valores sintéticos de pruebas.
+ *
+ * @param {string} tableName Tabla solicitada.
+ * @param {*} values Matriz con cabecera y filas.
+ * @param {Object} repositoryOptions Opciones normalizadas.
+ * @return {Object} Resultado de tabla normalizado.
+ */
+function aerpBuildAuthorizationMetadataTableResultFromValues_(
+  tableName,
+  values,
+  repositoryOptions
+) {
+  if (!Array.isArray(values) || values.length === 0 || !Array.isArray(values[0])) {
+    return {
+      ok: false,
+      status: 'TEST_METADATA_TABLE_INVALID',
+      tableName: tableName,
+      headers: [],
+      rows: [],
+      rowCount: 0,
+      errors: ['Authorization metadata test table is invalid.']
+    };
+  }
+
+  const headers = aerpNormalizeAuthorizationMetadataHeaders_(values[0], repositoryOptions);
+  const headersValidation = aerpValidateAuthorizationMetadataHeaders_(headers);
+
+  if (!headersValidation.ok) {
+    return {
+      ok: false,
+      status: headersValidation.status || 'METADATA_SCHEMA_INVALID',
+      tableName: tableName,
+      headers: headers,
+      rows: [],
+      rowCount: 0,
+      errors: Array.isArray(headersValidation.errors) ? headersValidation.errors : []
+    };
+  }
+
+  const rows = values
+    .slice(1)
+    .map(function (row, index) {
+      return aerpBuildAuthorizationMetadataRow_(headers, row, index + 2, repositoryOptions);
+    })
+    .filter(function (row) {
+      return repositoryOptions.ignoreEmptyRows !== true || row.__isEmpty !== true;
+    })
+    .map(function (row) {
+      const cleanRow = Object.assign({}, row);
+
+      delete cleanRow.__isEmpty;
+
+      return cleanRow;
+    });
+
+  return {
+    ok: true,
+    status: 'TEST_METADATA_TABLE_READ',
+    tableName: tableName,
     headers: headers,
     rows: rows,
     rowCount: rows.length,
@@ -783,7 +914,7 @@ function aerpBuildAuthorizationMetadataRow_(headers, values, rowNumber, options)
  *   - Lee la tabla mediante el Table Reader.
  *   - Detecta las columnas relevantes.
  *   - Filtra por usuario.
- *   - Filtra opcionalmente por empresa.
+ *   - Filtra obligatoriamente por empresa.
  *   - Ignora asignaciones inactivas.
  *   - Elimina roles duplicados.
  *
@@ -804,7 +935,10 @@ function aerpResolveAuthorizationUserRoles_(userId, companyId, options) {
       userId: normalizedUserId,
       companyId: normalizedCompanyId,
       roles: [],
+      modules: [],
+      permissions: [],
       assignments: [],
+      authorizationRules: [],
       errors: ['userId is required.']
     };
   }
@@ -815,7 +949,10 @@ function aerpResolveAuthorizationUserRoles_(userId, companyId, options) {
       userId: normalizedUserId,
       companyId: normalizedCompanyId,
       roles: [],
+      modules: [],
+      permissions: [],
       assignments: [],
+      authorizationRules: [],
       errors: ['companyId is required.']
     };
   }
@@ -832,8 +969,11 @@ function aerpResolveAuthorizationUserRoles_(userId, companyId, options) {
       userId: normalizedUserId,
       companyId: normalizedCompanyId,
       roles: [],
+      modules: [],
+      permissions: [],
       assignments: [],
-      errors: tableResult.errors
+      authorizationRules: [],
+      errors: ['Could not read CORE_USUARIO_ROL.']
     };
   }
 
@@ -937,15 +1077,12 @@ function aerpResolveAuthorizationUserRoles_(userId, companyId, options) {
   );
 
   if (activationError) {
-    return {
-      ok: false,
-      status: activationError.status,
-      userId: normalizedUserId,
-      companyId: normalizedCompanyId,
-      roles: [],
-      assignments: [],
-      errors: activationError.errors
-    };
+    return aerpBuildAuthorizationMetadataResolutionFailure_(
+      activationError.status,
+      normalizedUserId,
+      normalizedCompanyId,
+      activationError.errors
+    );
   }
 
   const assignments = relevantRows.filter(function (row) {
@@ -1026,17 +1163,12 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
   const normalizedCompanyId = aerpNormalizeAuthorizationMetadataString_(companyId);
 
   if (!normalizedCompanyId) {
-    return {
-      ok: false,
-      status: 'INVALID_COMPANY_ID',
-      roles: [],
-      companyId: normalizedCompanyId,
-      modules: [],
-      moduleCount: 0,
-      moduleDetails: [],
-      assignments: [],
-      errors: ['companyId is required.']
-    };
+    return aerpBuildAuthorizationMetadataResolutionFailure_(
+      'INVALID_COMPANY_ID',
+      '',
+      normalizedCompanyId,
+      ['companyId is required.']
+    );
   }
 
   const normalizedCompanyLookup = normalizedCompanyId.toUpperCase();
@@ -1054,17 +1186,12 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
   const uniqueRoles = Array.from(new Set(normalizedRoles));
 
   if (uniqueRoles.length === 0) {
-    return {
-      ok: false,
-      status: 'INVALID_ROLE_INPUT',
-      roles: [],
-      companyId: normalizedCompanyId,
-      modules: [],
-      moduleCount: 0,
-      moduleDetails: [],
-      assignments: [],
-      errors: ['At least one valid role is required.']
-    };
+    return aerpBuildAuthorizationMetadataResolutionFailure_(
+      'INVALID_ROLE_INPUT',
+      '',
+      normalizedCompanyId,
+      ['At least one valid role is required.']
+    );
   }
 
   const tableResult = aerpReadAuthorizationMetadataTable_(
@@ -1073,17 +1200,12 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
   );
 
   if (!tableResult.ok) {
-    return {
-      ok: false,
-      status: 'ROLE_MODULE_TABLE_READ_FAILED',
-      roles: uniqueRoles,
-      companyId: normalizedCompanyId,
-      modules: [],
-      moduleCount: 0,
-      moduleDetails: [],
-      assignments: [],
-      errors: tableResult.errors || ['Could not read CORE_ROL_MODULO.']
-    };
+    return aerpBuildAuthorizationMetadataResolutionFailure_(
+      'ROLE_MODULE_TABLE_READ_FAILED',
+      '',
+      normalizedCompanyId,
+      ['Could not read CORE_ROL_MODULO.']
+    );
   }
 
   const headers = tableResult.headers;
@@ -1095,17 +1217,12 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
   );
 
   if (!roleColumnResult.ok) {
-    return {
-      ok: false,
-      status: roleColumnResult.status || 'ROLE_MODULE_SCHEMA_INVALID',
-      roles: uniqueRoles,
-      companyId: normalizedCompanyId,
-      modules: [],
-      moduleCount: 0,
-      moduleDetails: [],
-      assignments: [],
-      errors: Array.isArray(roleColumnResult.errors) ? roleColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationMetadataResolutionFailure_(
+      roleColumnResult.status || 'ROLE_MODULE_SCHEMA_INVALID',
+      '',
+      normalizedCompanyId,
+      Array.isArray(roleColumnResult.errors) ? roleColumnResult.errors : []
+    );
   }
 
   const moduleColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
@@ -1115,17 +1232,12 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
   );
 
   if (!moduleColumnResult.ok) {
-    return {
-      ok: false,
-      status: moduleColumnResult.status || 'ROLE_MODULE_SCHEMA_INVALID',
-      roles: uniqueRoles,
-      companyId: normalizedCompanyId,
-      modules: [],
-      moduleCount: 0,
-      moduleDetails: [],
-      assignments: [],
-      errors: Array.isArray(moduleColumnResult.errors) ? moduleColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationMetadataResolutionFailure_(
+      moduleColumnResult.status || 'ROLE_MODULE_SCHEMA_INVALID',
+      '',
+      normalizedCompanyId,
+      Array.isArray(moduleColumnResult.errors) ? moduleColumnResult.errors : []
+    );
   }
 
   const companyColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
@@ -1135,17 +1247,12 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
   );
 
   if (!companyColumnResult.ok) {
-    return {
-      ok: false,
-      status: companyColumnResult.status || 'ROLE_MODULE_SCHEMA_INVALID',
-      roles: uniqueRoles,
-      companyId: normalizedCompanyId,
-      modules: [],
-      moduleCount: 0,
-      moduleDetails: [],
-      assignments: [],
-      errors: Array.isArray(companyColumnResult.errors) ? companyColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationMetadataResolutionFailure_(
+      companyColumnResult.status || 'ROLE_MODULE_SCHEMA_INVALID',
+      '',
+      normalizedCompanyId,
+      Array.isArray(companyColumnResult.errors) ? companyColumnResult.errors : []
+    );
   }
 
   const activeColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
@@ -1155,17 +1262,12 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
   );
 
   if (!activeColumnResult.ok) {
-    return {
-      ok: false,
-      status: activeColumnResult.status || 'ROLE_MODULE_SCHEMA_INVALID',
-      roles: [],
-      companyId: normalizedCompanyId,
-      modules: [],
-      moduleCount: 0,
-      moduleDetails: [],
-      assignments: [],
-      errors: Array.isArray(activeColumnResult.errors) ? activeColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationMetadataResolutionFailure_(
+      activeColumnResult.status || 'ROLE_MODULE_SCHEMA_INVALID',
+      '',
+      normalizedCompanyId,
+      Array.isArray(activeColumnResult.errors) ? activeColumnResult.errors : []
+    );
   }
 
   const roleColumn = roleColumnResult.column;
@@ -1207,17 +1309,12 @@ function aerpResolveAuthorizationRoleModules_(roles, companyId, options) {
   );
 
   if (activationError) {
-    return {
-      ok: false,
-      status: activationError.status,
-      roles: [],
-      companyId: normalizedCompanyId,
-      modules: [],
-      moduleCount: 0,
-      moduleDetails: [],
-      assignments: [],
-      errors: activationError.errors
-    };
+    return aerpBuildAuthorizationMetadataResolutionFailure_(
+      activationError.status,
+      '',
+      normalizedCompanyId,
+      activationError.errors
+    );
   }
 
   const assignments = relevantRows
@@ -1322,44 +1419,31 @@ function aerpResolveAuthorizationContext_(userId, companyId, options) {
   const normalizedCompanyId = aerpNormalizeAuthorizationMetadataString_(companyId);
 
   if (!normalizedUserId) {
-    return {
-      ok: false,
+    const failure = aerpBuildAuthorizationMetadataResolutionFailure_(
+      'INVALID_USER_ID',
+      normalizedUserId,
+      normalizedCompanyId,
+      ['userId is required.']
+    );
 
-      status: 'INVALID_USER_ID',
+    failure.startedAt = startedAt.toISOString();
+    failure.finishedAt = new Date().toISOString();
 
-      userId: normalizedUserId,
-
-      companyId: normalizedCompanyId,
-
-      roles: [],
-
-      modules: [],
-
-      moduleDetails: [],
-
-      errors: ['userId is required.'],
-
-      startedAt: startedAt.toISOString(),
-
-      finishedAt: new Date().toISOString()
-    };
+    return failure;
   }
 
   if (!normalizedCompanyId) {
-    return {
-      ok: false,
-      status: 'INVALID_COMPANY_ID',
-      userId: normalizedUserId,
-      companyId: normalizedCompanyId,
-      roles: [],
-      modules: [],
-      moduleDetails: [],
-      permissions: [],
-      authorizationRules: [],
-      errors: ['companyId is required.'],
-      startedAt: startedAt.toISOString(),
-      finishedAt: new Date().toISOString()
-    };
+    const failure = aerpBuildAuthorizationMetadataResolutionFailure_(
+      'INVALID_COMPANY_ID',
+      normalizedUserId,
+      normalizedCompanyId,
+      ['companyId is required.']
+    );
+
+    failure.startedAt = startedAt.toISOString();
+    failure.finishedAt = new Date().toISOString();
+
+    return failure;
   }
 
   const roleResult = aerpResolveAuthorizationUserRoles_(
@@ -1369,29 +1453,17 @@ function aerpResolveAuthorizationContext_(userId, companyId, options) {
   );
 
   if (!roleResult.ok) {
-    return {
-      ok: false,
+    const failure = aerpBuildAuthorizationMetadataResolutionFailure_(
+      'USER_ROLE_RESOLUTION_FAILED',
+      normalizedUserId,
+      normalizedCompanyId,
+      ['Could not resolve user roles.']
+    );
 
-      status: 'USER_ROLE_RESOLUTION_FAILED',
+    failure.startedAt = startedAt.toISOString();
+    failure.finishedAt = new Date().toISOString();
 
-      userId: normalizedUserId,
-
-      companyId: normalizedCompanyId,
-
-      roles: [],
-
-      modules: [],
-
-      moduleDetails: [],
-
-      roleResult: roleResult,
-
-      errors: roleResult.errors || ['Could not resolve user roles.'],
-
-      startedAt: startedAt.toISOString(),
-
-      finishedAt: new Date().toISOString()
-    };
+    return failure;
   }
 
   /*
@@ -1434,35 +1506,17 @@ function aerpResolveAuthorizationContext_(userId, companyId, options) {
   );
 
   if (!moduleResult.ok) {
-    return {
-      ok: false,
+    const failure = aerpBuildAuthorizationMetadataResolutionFailure_(
+      'ROLE_MODULE_RESOLUTION_FAILED',
+      normalizedUserId,
+      normalizedCompanyId,
+      ['Could not resolve role modules.']
+    );
 
-      status: 'ROLE_MODULE_RESOLUTION_FAILED',
+    failure.startedAt = startedAt.toISOString();
+    failure.finishedAt = new Date().toISOString();
 
-      userId: normalizedUserId,
-
-      companyId: normalizedCompanyId,
-
-      roles: [],
-
-      modules: [],
-
-      moduleDetails: [],
-
-      permissions: [],
-
-      authorizationRules: [],
-
-      roleResult: roleResult,
-
-      moduleResult: moduleResult,
-
-      errors: moduleResult.errors || ['Could not resolve role modules.'],
-
-      startedAt: startedAt.toISOString(),
-
-      finishedAt: new Date().toISOString()
-    };
+    return failure;
   }
   /*
    * Resolver permisos efectivos para los roles
@@ -1476,31 +1530,17 @@ function aerpResolveAuthorizationContext_(userId, companyId, options) {
   );
 
   if (!permissionResult.ok) {
-    return {
-      ok: false,
+    const failure = aerpBuildAuthorizationMetadataResolutionFailure_(
+      'PERMISSION_RESOLUTION_FAILED',
+      normalizedUserId,
+      normalizedCompanyId,
+      ['Could not resolve authorization permissions.']
+    );
 
-      status: 'PERMISSION_RESOLUTION_FAILED',
+    failure.startedAt = startedAt.toISOString();
+    failure.finishedAt = new Date().toISOString();
 
-      userId: normalizedUserId,
-
-      companyId: normalizedCompanyId,
-
-      roles: [],
-
-      modules: [],
-
-      permissions: [],
-
-      authorizationRules: [],
-
-      permissionResult: permissionResult,
-
-      errors: permissionResult.errors || ['Could not resolve authorization permissions.'],
-
-      startedAt: startedAt.toISOString(),
-
-      finishedAt: new Date().toISOString()
-    };
+    return failure;
   }
 
   /*
@@ -1510,33 +1550,17 @@ function aerpResolveAuthorizationContext_(userId, companyId, options) {
   const ruleResult = aerpBuildAuthorizationRulesFromPermissions_(permissionResult.permissions);
 
   if (!ruleResult.ok) {
-    return {
-      ok: false,
+    const failure = aerpBuildAuthorizationMetadataResolutionFailure_(
+      'AUTHORIZATION_RULE_BUILD_FAILED',
+      normalizedUserId,
+      normalizedCompanyId,
+      ['Could not build authorization rules.']
+    );
 
-      status: 'AUTHORIZATION_RULE_BUILD_FAILED',
+    failure.startedAt = startedAt.toISOString();
+    failure.finishedAt = new Date().toISOString();
 
-      userId: normalizedUserId,
-
-      companyId: normalizedCompanyId,
-
-      roles: roleResult.roles,
-
-      modules: moduleResult.modules,
-
-      permissions: permissionResult.permissions,
-
-      authorizationRules: [],
-
-      permissionResult: permissionResult,
-
-      ruleResult: ruleResult,
-
-      errors: ruleResult.errors || ['Could not build authorization rules.'],
-
-      startedAt: startedAt.toISOString(),
-
-      finishedAt: new Date().toISOString()
-    };
+    return failure;
   }
 
   const finishedAt = new Date();
@@ -1611,18 +1635,9 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
   const normalizedCompanyId = aerpNormalizeAuthorizationMetadataString_(companyId);
 
   if (!normalizedCompanyId) {
-    return {
-      ok: false,
-      status: 'INVALID_COMPANY_ID',
-      companyId: normalizedCompanyId,
-      roles: [],
-      modules: [],
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: ['companyId is required.']
-    };
+    return aerpBuildAuthorizationPermissionFailure_('INVALID_COMPANY_ID', normalizedCompanyId, [
+      'companyId is required.'
+    ]);
   }
 
   const normalizedCompanyLookup = normalizedCompanyId.toUpperCase();
@@ -1652,33 +1667,19 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
   const uniqueModules = Array.from(new Set(normalizedModules));
 
   if (uniqueRoles.length === 0) {
-    return {
-      ok: false,
-      status: 'INVALID_PERMISSION_ROLE_INPUT',
-      companyId: normalizedCompanyId,
-      roles: [],
-      modules: uniqueModules,
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: ['At least one valid role is required.']
-    };
+    return aerpBuildAuthorizationPermissionFailure_(
+      'INVALID_PERMISSION_ROLE_INPUT',
+      normalizedCompanyId,
+      ['At least one valid role is required.']
+    );
   }
 
   if (uniqueModules.length === 0) {
-    return {
-      ok: false,
-      status: 'INVALID_PERMISSION_MODULE_INPUT',
-      companyId: normalizedCompanyId,
-      roles: uniqueRoles,
-      modules: [],
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: ['At least one valid module is required.']
-    };
+    return aerpBuildAuthorizationPermissionFailure_(
+      'INVALID_PERMISSION_MODULE_INPUT',
+      normalizedCompanyId,
+      ['At least one valid module is required.']
+    );
   }
 
   const tableResult = aerpReadAuthorizationMetadataTable_(
@@ -1687,18 +1688,11 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
   );
 
   if (!tableResult.ok) {
-    return {
-      ok: false,
-      status: 'PERMISSION_TABLE_READ_FAILED',
-      companyId: normalizedCompanyId,
-      roles: uniqueRoles,
-      modules: uniqueModules,
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: tableResult.errors || ['Could not read CORE_PERMISOS.']
-    };
+    return aerpBuildAuthorizationPermissionFailure_(
+      'PERMISSION_TABLE_READ_FAILED',
+      normalizedCompanyId,
+      ['Could not read CORE_PERMISOS.']
+    );
   }
 
   const headers = tableResult.headers;
@@ -1710,18 +1704,11 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
   );
 
   if (!permissionIdColumnResult.ok) {
-    return {
-      ok: false,
-      status: permissionIdColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
-      companyId: normalizedCompanyId,
-      roles: uniqueRoles,
-      modules: uniqueModules,
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: Array.isArray(permissionIdColumnResult.errors) ? permissionIdColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationPermissionFailure_(
+      permissionIdColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
+      normalizedCompanyId,
+      Array.isArray(permissionIdColumnResult.errors) ? permissionIdColumnResult.errors : []
+    );
   }
 
   const roleColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
@@ -1731,18 +1718,11 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
   );
 
   if (!roleColumnResult.ok) {
-    return {
-      ok: false,
-      status: roleColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
-      companyId: normalizedCompanyId,
-      roles: uniqueRoles,
-      modules: uniqueModules,
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: Array.isArray(roleColumnResult.errors) ? roleColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationPermissionFailure_(
+      roleColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
+      normalizedCompanyId,
+      Array.isArray(roleColumnResult.errors) ? roleColumnResult.errors : []
+    );
   }
 
   const moduleColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
@@ -1752,18 +1732,11 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
   );
 
   if (!moduleColumnResult.ok) {
-    return {
-      ok: false,
-      status: moduleColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
-      companyId: normalizedCompanyId,
-      roles: uniqueRoles,
-      modules: uniqueModules,
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: Array.isArray(moduleColumnResult.errors) ? moduleColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationPermissionFailure_(
+      moduleColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
+      normalizedCompanyId,
+      Array.isArray(moduleColumnResult.errors) ? moduleColumnResult.errors : []
+    );
   }
 
   const companyColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
@@ -1773,18 +1746,11 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
   );
 
   if (!companyColumnResult.ok) {
-    return {
-      ok: false,
-      status: companyColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
-      companyId: normalizedCompanyId,
-      roles: uniqueRoles,
-      modules: uniqueModules,
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: Array.isArray(companyColumnResult.errors) ? companyColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationPermissionFailure_(
+      companyColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
+      normalizedCompanyId,
+      Array.isArray(companyColumnResult.errors) ? companyColumnResult.errors : []
+    );
   }
 
   const activeColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
@@ -1794,18 +1760,11 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
   );
 
   if (!activeColumnResult.ok) {
-    return {
-      ok: false,
-      status: activeColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
-      companyId: normalizedCompanyId,
-      roles: [],
-      modules: [],
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: Array.isArray(activeColumnResult.errors) ? activeColumnResult.errors : []
-    };
+    return aerpBuildAuthorizationPermissionFailure_(
+      activeColumnResult.status || 'PERMISSION_SCHEMA_INVALID',
+      normalizedCompanyId,
+      Array.isArray(activeColumnResult.errors) ? activeColumnResult.errors : []
+    );
   }
 
   const permissionIdColumn = permissionIdColumnResult.column;
@@ -1823,28 +1782,39 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
     'ACCESS_LEVEL'
   ]);
 
-  const actionColumns = {
-    VIEW: aerpResolveAuthorizationMetadataColumn_(headers, ['PUEDE_VER', 'CAN_VIEW']),
-
-    CREATE: aerpResolveAuthorizationMetadataColumn_(headers, ['PUEDE_CREAR', 'CAN_CREATE']),
-
-    EDIT: aerpResolveAuthorizationMetadataColumn_(headers, ['PUEDE_EDITAR', 'CAN_EDIT']),
-
-    DELETE: aerpResolveAuthorizationMetadataColumn_(headers, ['PUEDE_ELIMINAR', 'CAN_DELETE']),
-
-    APPROVE: aerpResolveAuthorizationMetadataColumn_(headers, ['PUEDE_APROBAR', 'CAN_APPROVE']),
-
-    EXPORT: aerpResolveAuthorizationMetadataColumn_(headers, ['PUEDE_EXPORTAR', 'CAN_EXPORT']),
-
-    IMPORT: aerpResolveAuthorizationMetadataColumn_(headers, ['PUEDE_IMPORTAR', 'CAN_IMPORT']),
-
-    PRINT: aerpResolveAuthorizationMetadataColumn_(headers, ['PUEDE_IMPRIMIR', 'CAN_PRINT']),
-
-    ADMINISTER: aerpResolveAuthorizationMetadataColumn_(headers, [
-      'PUEDE_ADMINISTRAR',
-      'CAN_ADMINISTER'
-    ])
+  const actionAliases = {
+    VIEW: ['PUEDE_VER', 'CAN_VIEW'],
+    CREATE: ['PUEDE_CREAR', 'CAN_CREATE'],
+    EDIT: ['PUEDE_EDITAR', 'CAN_EDIT'],
+    DELETE: ['PUEDE_ELIMINAR', 'CAN_DELETE'],
+    APPROVE: ['PUEDE_APROBAR', 'CAN_APPROVE'],
+    EXPORT: ['PUEDE_EXPORTAR', 'CAN_EXPORT'],
+    IMPORT: ['PUEDE_IMPORTAR', 'CAN_IMPORT'],
+    PRINT: ['PUEDE_IMPRIMIR', 'CAN_PRINT'],
+    ADMINISTER: ['PUEDE_ADMINISTRAR', 'CAN_ADMINISTER']
   };
+
+  const actionColumns = {};
+  const actionNames = Object.keys(actionAliases);
+
+  for (let index = 0; index < actionNames.length; index += 1) {
+    const action = actionNames[index];
+    const actionColumnResult = aerpResolveAuthorizationMetadataSecurityColumn_(
+      headers,
+      actionAliases[action],
+      'action.' + action
+    );
+
+    if (!actionColumnResult.ok) {
+      return aerpBuildAuthorizationPermissionFailure_(
+        actionColumnResult.status,
+        normalizedCompanyId,
+        actionColumnResult.errors
+      );
+    }
+
+    actionColumns[action] = actionColumnResult.column;
+  }
 
   const relevantRows = tableResult.rows.filter(function (row) {
     const rowRole = aerpNormalizeAuthorizationMetadataString_(row[roleColumn]).toUpperCase();
@@ -1872,18 +1842,11 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
   );
 
   if (activationError) {
-    return {
-      ok: false,
-      status: activationError.status,
-      companyId: normalizedCompanyId,
-      roles: [],
-      modules: [],
-      permissions: [],
-      permissionCount: 0,
-      assignments: [],
-      actionColumns: {},
-      errors: activationError.errors
-    };
+    return aerpBuildAuthorizationPermissionFailure_(
+      activationError.status,
+      normalizedCompanyId,
+      activationError.errors
+    );
   }
 
   const assignments = relevantRows
@@ -1896,7 +1859,7 @@ function aerpResolveAuthorizationPermissions_(roles, modules, companyId, options
       Object.keys(actionColumns).forEach(function (action) {
         const column = actionColumns[action];
 
-        actions[action] = column ? aerpIsAuthorizationMetadataActiveValue_(row[column]) : false;
+        actions[action] = aerpIsAuthorizationMetadataActiveValue_(row[column]);
       });
 
       return {
@@ -2185,9 +2148,17 @@ function aerpAuthorizeFromMetadataImpl_(request, options) {
 
       allowed: false,
 
-      metadataContext: metadataContext,
+      roles: [],
 
-      errors: metadataContext.errors || ['Could not resolve authorization metadata.'],
+      modules: [],
+
+      permissions: [],
+
+      assignments: [],
+
+      authorizationRules: [],
+
+      errors: ['Could not resolve authorization metadata.'],
 
       startedAt: startedAt.toISOString(),
 
@@ -2425,15 +2396,59 @@ function aerpResolveAuthorizationMetadataSecurityColumn_(headers, candidates, fi
 function aerpBuildAuthorizationUserRoleSchemaError_(columnResult, userId, companyId) {
   const source = columnResult && typeof columnResult === 'object' ? columnResult : {};
 
+  return aerpBuildAuthorizationMetadataResolutionFailure_(
+    source.status || 'USER_ROLE_SCHEMA_ERROR',
+    userId,
+    companyId,
+    Array.isArray(source.errors) ? source.errors : ['CORE_USUARIO_ROL schema is invalid.']
+  );
+}
+
+/**
+ * Construye una respuesta uniforme sin resultados parciales de autorización.
+ *
+ * @param {string} status Estado controlado por AERP-037.
+ * @param {string} userId Usuario normalizado o vacío.
+ * @param {string} companyId Empresa normalizada o vacía.
+ * @param {string[]} errors Errores públicos fijos.
+ * @return {Object} Fallo de resolución sanitizado.
+ */
+function aerpBuildAuthorizationMetadataResolutionFailure_(status, userId, companyId, errors) {
   return {
     ok: false,
-    status: source.status || 'USER_ROLE_SCHEMA_ERROR',
-    userId: userId,
-    companyId: companyId,
+    status: status,
+    userId: userId || '',
+    companyId: companyId || '',
     roles: [],
+    modules: [],
+    moduleDetails: [],
+    permissions: [],
     assignments: [],
-    errors: Array.isArray(source.errors) ? source.errors : ['CORE_USUARIO_ROL schema is invalid.']
+    roleAssignments: [],
+    moduleAssignments: [],
+    authorizationRules: [],
+    roleCount: 0,
+    moduleCount: 0,
+    permissionCount: 0,
+    authorizationRuleCount: 0,
+    errors: Array.isArray(errors) ? errors : ['Authorization metadata resolution failed.']
   };
+}
+
+/**
+ * Construye un fallo uniforme del resolver de permisos.
+ *
+ * @param {string} status Estado controlado por AERP-037.
+ * @param {string} companyId Empresa normalizada.
+ * @param {string[]} errors Errores públicos fijos.
+ * @return {Object} Fallo sin permisos ni reglas parciales.
+ */
+function aerpBuildAuthorizationPermissionFailure_(status, companyId, errors) {
+  const result = aerpBuildAuthorizationMetadataResolutionFailure_(status, '', companyId, errors);
+
+  result.actionColumns = {};
+
+  return result;
 }
 
 /**
@@ -2677,6 +2692,109 @@ function aerpBuildAuthorizationTestAuthentication_() {
   return {
     testToken: 'AERP_TEST_AUTHENTICATION'
   };
+}
+
+/**
+ * Construye las nueve columnas de acción obligatorias de CORE_PERMISOS.
+ *
+ * @return {string[]}
+ */
+function aerpBuildAuthorizationPermissionTestActionHeaders_() {
+  return [
+    'PUEDE_VER',
+    'PUEDE_CREAR',
+    'PUEDE_EDITAR',
+    'PUEDE_ELIMINAR',
+    'PUEDE_APROBAR',
+    'PUEDE_EXPORTAR',
+    'PUEDE_IMPORTAR',
+    'PUEDE_IMPRIMIR',
+    'PUEDE_ADMINISTRAR'
+  ];
+}
+
+/**
+ * Construye tablas sintéticas mínimas para el flujo integrado.
+ *
+ * @param {*} userRoleActive Activación de usuario-rol.
+ * @param {*} roleModuleActive Activación de rol-módulo.
+ * @param {*} permissionActive Activación de permiso.
+ * @return {Object} Tablas 2D inyectables únicamente en tests backend.
+ */
+function aerpBuildAuthorizationSyntheticTables_(
+  userRoleActive,
+  roleModuleActive,
+  permissionActive
+) {
+  const permissionHeaders = ['ID_PERMISO', 'ID_ROL', 'ID_MODULO', 'ID_EMPRESA', 'ACTIVO'].concat(
+    aerpBuildAuthorizationPermissionTestActionHeaders_()
+  );
+
+  return {
+    CORE_USUARIO_ROL: [
+      ['ID_USUARIO', 'ID_ROL', 'ID_EMPRESA', 'ACTIVO'],
+      ['usuario.test@alef.local', 'ROL_TEST', 'EMPRESA_TEST', userRoleActive]
+    ],
+    CORE_ROL_MODULO: [
+      ['ID_ROL', 'ID_MODULO', 'ID_EMPRESA', 'ACTIVO'],
+      ['ROL_TEST', 'MODULO_TEST_AUTORIZACION', 'EMPRESA_TEST', roleModuleActive]
+    ],
+    CORE_PERMISOS: [
+      permissionHeaders,
+      [
+        'PERMISO_TEST',
+        'ROL_TEST',
+        'MODULO_TEST_AUTORIZACION',
+        'EMPRESA_TEST',
+        permissionActive,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    ]
+  };
+}
+
+/**
+ * Construye opciones de prueba con metadata sintética y verificador backend.
+ *
+ * @param {Object} tables Tablas sintéticas.
+ * @return {Object} Opciones internas de prueba.
+ */
+function aerpBuildAuthorizationSyntheticTestOptions_(tables) {
+  return {
+    trustedPrincipalVerifier: aerpTestTrustedPrincipalVerifier_,
+    testAuthorizationMetadataTables: tables
+  };
+}
+
+/**
+ * Verifica que un fallo no contenga resultados parciales ni objetos internos.
+ *
+ * @param {Object} result Resultado de resolver o entry point público.
+ */
+function aerpAssertAuthorizationFailureCollectionsEmpty_(result) {
+  const fields = ['roles', 'modules', 'permissions', 'assignments', 'authorizationRules'];
+
+  fields.forEach(function (field) {
+    if (!Array.isArray(result[field]) || result[field].length !== 0) {
+      throw new Error('Expected empty failure collection: ' + field);
+    }
+  });
+
+  ['roleResult', 'moduleResult', 'permissionResult', 'ruleResult', 'metadataContext'].forEach(
+    function (field) {
+      if (Object.prototype.hasOwnProperty.call(result, field)) {
+        throw new Error('Unexpected raw metadata failure field: ' + field);
+      }
+    }
+  );
 }
 
 /**
@@ -4422,4 +4540,237 @@ function testAuthorizationPublicEntryPointsFailClosed() {
     metadata: metadataResult,
     authorization: authorizationResult
   };
+}
+
+/**
+ * Aplica un caso sintético de schema/valor sobre la columna ACTIVO.
+ *
+ * @param {Array[]} table Tabla 2D.
+ * @param {string} caseName Caso: missing, ambiguous o value.
+ * @param {*} value Valor utilizado para el caso value.
+ */
+function aerpApplyAuthorizationSyntheticActivationCase_(table, caseName, value) {
+  const activeIndex = table[0].indexOf('ACTIVO');
+
+  if (caseName === 'missing') {
+    table[0].splice(activeIndex, 1);
+    table[1].splice(activeIndex, 1);
+    return;
+  }
+
+  if (caseName === 'ambiguous') {
+    table[0].push('ACTIVE');
+    table[1].push(false);
+    return;
+  }
+
+  table[1][activeIndex] = value;
+}
+
+/**
+ * Ejecuta una autorización sintética para comprobar el fallo público sanitizado.
+ *
+ * @param {Object} tables Tablas sintéticas.
+ * @return {Object} Resultado público.
+ */
+function aerpAuthorizeWithSyntheticMetadata_(tables) {
+  return aerpAuthorizeFromMetadata(
+    {
+      companyId: 'EMPRESA_TEST',
+      authentication: aerpBuildAuthorizationTestAuthentication_(),
+      action: 'EDIT',
+      moduleId: 'MODULO_TEST_AUTORIZACION'
+    },
+    aerpBuildAuthorizationSyntheticTestOptions_(tables)
+  );
+}
+
+/**
+ * Comprueba activación inválida y schema ACTIVE estricto en User Role Resolver.
+ *
+ * @return {Object}
+ */
+function testAuthorizationUserRolesStrictActivationResolver() {
+  aerpRequireAuthorizationTestMode_();
+
+  const cases = [
+    { name: 'value', value: '' },
+    { name: 'value', value: null },
+    { name: 'value', value: undefined },
+    { name: 'value', value: 'UNKNOWN' },
+    { name: 'missing' },
+    { name: 'ambiguous' }
+  ];
+
+  cases.forEach(function (testCase) {
+    const tables = aerpBuildAuthorizationSyntheticTables_(true, true, true);
+    aerpApplyAuthorizationSyntheticActivationCase_(
+      tables.CORE_USUARIO_ROL,
+      testCase.name,
+      testCase.value
+    );
+
+    const options = aerpBuildAuthorizationSyntheticTestOptions_(tables);
+    const resolverResult = aerpResolveAuthorizationUserRoles_(
+      'usuario.test@alef.local',
+      'EMPRESA_TEST',
+      options
+    );
+    const publicResult = aerpAuthorizeWithSyntheticMetadata_(tables);
+
+    if (resolverResult.ok || publicResult.decision !== 'DENY' || publicResult.allowed !== false) {
+      throw new Error('Expected strict user-role activation failure.');
+    }
+
+    aerpAssertAuthorizationFailureCollectionsEmpty_(resolverResult);
+    aerpAssertAuthorizationFailureCollectionsEmpty_(publicResult);
+  });
+
+  return { ok: true, status: 'USER_ROLE_STRICT_ACTIVATION_RESOLVER_TESTED' };
+}
+
+/**
+ * Comprueba activación inválida y schema ACTIVE estricto en Role Module Resolver.
+ *
+ * @return {Object}
+ */
+function testAuthorizationRoleModulesStrictActivationResolver() {
+  aerpRequireAuthorizationTestMode_();
+
+  const cases = [
+    { name: 'value', value: '' },
+    { name: 'value', value: null },
+    { name: 'value', value: undefined },
+    { name: 'value', value: 'UNKNOWN' },
+    { name: 'missing' },
+    { name: 'ambiguous' }
+  ];
+
+  cases.forEach(function (testCase) {
+    const tables = aerpBuildAuthorizationSyntheticTables_(true, true, true);
+    aerpApplyAuthorizationSyntheticActivationCase_(
+      tables.CORE_ROL_MODULO,
+      testCase.name,
+      testCase.value
+    );
+
+    const options = aerpBuildAuthorizationSyntheticTestOptions_(tables);
+    const resolverResult = aerpResolveAuthorizationRoleModules_(
+      ['ROL_TEST'],
+      'EMPRESA_TEST',
+      options
+    );
+    const publicResult = aerpAuthorizeWithSyntheticMetadata_(tables);
+
+    if (resolverResult.ok || publicResult.decision !== 'DENY' || publicResult.allowed !== false) {
+      throw new Error('Expected strict role-module activation failure.');
+    }
+
+    aerpAssertAuthorizationFailureCollectionsEmpty_(resolverResult);
+    aerpAssertAuthorizationFailureCollectionsEmpty_(publicResult);
+  });
+
+  return { ok: true, status: 'ROLE_MODULE_STRICT_ACTIVATION_RESOLVER_TESTED' };
+}
+
+/**
+ * Comprueba activación inválida y schema ACTIVE estricto en Permission Resolver.
+ *
+ * @return {Object}
+ */
+function testAuthorizationPermissionsStrictActivationResolver() {
+  aerpRequireAuthorizationTestMode_();
+
+  const cases = [
+    { name: 'value', value: '' },
+    { name: 'value', value: null },
+    { name: 'value', value: undefined },
+    { name: 'value', value: 'UNKNOWN' },
+    { name: 'missing' },
+    { name: 'ambiguous' }
+  ];
+
+  cases.forEach(function (testCase) {
+    const tables = aerpBuildAuthorizationSyntheticTables_(true, true, true);
+    aerpApplyAuthorizationSyntheticActivationCase_(
+      tables.CORE_PERMISOS,
+      testCase.name,
+      testCase.value
+    );
+
+    const options = aerpBuildAuthorizationSyntheticTestOptions_(tables);
+    const resolverResult = aerpResolveAuthorizationPermissions_(
+      ['ROL_TEST'],
+      ['MODULO_TEST_AUTORIZACION'],
+      'EMPRESA_TEST',
+      options
+    );
+    const publicResult = aerpAuthorizeWithSyntheticMetadata_(tables);
+
+    if (resolverResult.ok || publicResult.decision !== 'DENY' || publicResult.allowed !== false) {
+      throw new Error('Expected strict permission activation failure.');
+    }
+
+    aerpAssertAuthorizationFailureCollectionsEmpty_(resolverResult);
+    aerpAssertAuthorizationFailureCollectionsEmpty_(publicResult);
+  });
+
+  return { ok: true, status: 'PERMISSION_STRICT_ACTIVATION_RESOLVER_TESTED' };
+}
+
+/**
+ * Comprueba que alias de acción en conflicto invaliden CORE_PERMISOS completo.
+ *
+ * @return {Object}
+ */
+function testAuthorizationPermissionActionAliasConflictDenied() {
+  aerpRequireAuthorizationTestMode_();
+
+  const missingTables = aerpBuildAuthorizationSyntheticTables_(true, true, true);
+  const missingPermissionTable = missingTables.CORE_PERMISOS;
+  const viewIndex = missingPermissionTable[0].indexOf('PUEDE_VER');
+  missingPermissionTable[0].splice(viewIndex, 1);
+  missingPermissionTable[1].splice(viewIndex, 1);
+
+  const missingOptions = aerpBuildAuthorizationSyntheticTestOptions_(missingTables);
+  const missingResult = aerpResolveAuthorizationPermissions_(
+    ['ROL_TEST'],
+    ['MODULO_TEST_AUTORIZACION'],
+    'EMPRESA_TEST',
+    missingOptions
+  );
+
+  if (missingResult.ok || missingResult.status !== 'REQUIRED_SECURITY_FIELD_MISSING') {
+    throw new Error('Expected a missing permission action column to fail closed.');
+  }
+
+  aerpAssertAuthorizationFailureCollectionsEmpty_(missingResult);
+
+  const ambiguousTables = aerpBuildAuthorizationSyntheticTables_(true, true, true);
+  const permissionTable = ambiguousTables.CORE_PERMISOS;
+  permissionTable[0].push('CAN_EDIT');
+  permissionTable[1].push(false);
+
+  const options = aerpBuildAuthorizationSyntheticTestOptions_(ambiguousTables);
+  const resolverResult = aerpResolveAuthorizationPermissions_(
+    ['ROL_TEST'],
+    ['MODULO_TEST_AUTORIZACION'],
+    'EMPRESA_TEST',
+    options
+  );
+  const publicResult = aerpAuthorizeWithSyntheticMetadata_(ambiguousTables);
+
+  if (
+    resolverResult.ok ||
+    resolverResult.status !== 'AMBIGUOUS_SECURITY_FIELD' ||
+    publicResult.decision !== 'DENY' ||
+    publicResult.allowed !== false
+  ) {
+    throw new Error('Expected conflicting permission action aliases to fail closed.');
+  }
+
+  aerpAssertAuthorizationFailureCollectionsEmpty_(resolverResult);
+  aerpAssertAuthorizationFailureCollectionsEmpty_(publicResult);
+
+  return { ok: true, status: 'PERMISSION_ACTION_ALIAS_CONFLICT_DENIED' };
 }
