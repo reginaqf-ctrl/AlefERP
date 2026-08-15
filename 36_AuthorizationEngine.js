@@ -48,12 +48,19 @@ const AERP_AUTHORIZATION_REASON = Object.freeze({
   NO_MATCHING_RULE: 'NO_MATCHING_RULE',
   INVALID_REQUEST: 'INVALID_REQUEST',
   INVALID_AUTHORIZATION_OPTIONS: 'INVALID_AUTHORIZATION_OPTIONS',
+  INVALID_AUTHORIZATION_RULES: 'INVALID_AUTHORIZATION_RULES',
   ENGINE_ERROR: 'ENGINE_ERROR'
 });
 
 const AERP_AUTHORIZATION_PUBLIC_ERROR = Object.freeze({
   INVALID_AUTHORIZATION_OPTIONS: 'Authorization options are invalid.',
+  INVALID_AUTHORIZATION_RULES: 'Authorization rules are invalid.',
   ENGINE_ERROR: 'Authorization evaluation failed.'
+});
+
+const AERP_AUTHORIZATION_CONDITION_REASON_CODE = Object.freeze({
+  INVALID_CONDITION_SCHEMA: 'INVALID_CONDITION_SCHEMA',
+  CONDITION_EVALUATION_ERROR: 'CONDITION_EVALUATION_ERROR'
 });
 
 const AERP_AUTHORIZATION_DEFAULTS = Object.freeze({
@@ -168,6 +175,29 @@ function aerpAuthorize(request, options) {
       executionOptions.rules,
       executionOptions
     );
+
+    if (ruleEvaluation.valid !== true) {
+      aerpAddAuthorizationTraceStep_(
+        trace,
+        'VALIDATE_CONDITIONS',
+        AERP_AUTHORIZATION_DECISION.DENY,
+        {
+          reasonCode: AERP_AUTHORIZATION_CONDITION_REASON_CODE.INVALID_CONDITION_SCHEMA
+        }
+      );
+
+      return aerpBuildAuthorizationDecision_({
+        decision: AERP_AUTHORIZATION_DECISION.DENY,
+        reason: AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_RULES,
+        reasonCode: AERP_AUTHORIZATION_CONDITION_REASON_CODE.INVALID_CONDITION_SCHEMA,
+        request: normalizedRequest,
+        matchedRule: null,
+        decisionSummary: null,
+        validationErrors: [AERP_AUTHORIZATION_PUBLIC_ERROR.INVALID_AUTHORIZATION_RULES],
+        trace: trace,
+        startedAt: startedAt
+      });
+    }
 
     aerpAddAuthorizationTraceStep_(
       trace,
@@ -289,7 +319,8 @@ function aerpBuildAuthorizationRequest_(request) {
   const context = source.context && typeof source.context === 'object' ? source.context : {};
 
   return {
-    requestId: aerpNormalizeAuthorizationString_(source.requestId) || Utilities.getUuid(),
+    requestId:
+      aerpNormalizeAuthorizationString_(source.requestId) || aerpBuildSafeAuthorizationUuid_(),
 
     subject: {
       id: aerpNormalizeAuthorizationString_(subject.id),
@@ -584,7 +615,22 @@ function aerpAddAuthorizationTraceStep_(trace, stage, result, details) {
  * @return {Object} Evidencia obtenida durante la evaluaciÃ³n.
  */
 function aerpEvaluateAuthorizationRules_(request, rules, _options) {
-  const normalizedRules = aerpNormalizeAuthorizationRules_(rules);
+  const normalizationResult = aerpNormalizeAuthorizationRules_(rules);
+
+  if (!normalizationResult.ok) {
+    return {
+      valid: false,
+      matched: false,
+      decision: AERP_AUTHORIZATION_DECISION.DENY,
+      reason: AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_RULES,
+      matchedRule: null,
+      matchingRules: [],
+      evaluatedRuleCount: 0,
+      matchingRuleCount: 0
+    };
+  }
+
+  const normalizedRules = normalizationResult.rules;
 
   const orderedRules = normalizedRules.slice().sort(aerpCompareAuthorizationRules_);
 
@@ -610,6 +656,8 @@ function aerpEvaluateAuthorizationRules_(request, rules, _options) {
 
   if (matchingRules.length === 0) {
     return {
+      valid: true,
+
       matched: false,
 
       decision: null,
@@ -645,6 +693,8 @@ function aerpEvaluateAuthorizationRules_(request, rules, _options) {
       : AERP_AUTHORIZATION_DECISION.DENY;
 
   return {
+    valid: true,
+
     matched: true,
 
     decision: decision,
@@ -694,20 +744,51 @@ function aerpEvaluateAuthorizationRules_(request, rules, _options) {
  * El valor "*" funciona como comodÃ­n.
  *
  * @param {*} rules Reglas originales.
- * @return {Object[]} Reglas normalizadas.
+ * @return {{ok: boolean, rules: Object[]}} Reglas normalizadas.
  */
 function aerpNormalizeAuthorizationRules_(rules) {
+  /*
+   * Límite de confianza:
+   * las reglas productivas deben ser objetos JSON/plain construidos por el
+   * backend. JavaScript no permite detectar universalmente todos los Proxies;
+   * cualquier fallo durante su inspección invalida la colección y termina en
+   * DENY sin propagar detalles del trap.
+   */
   if (!Array.isArray(rules)) {
-    return [];
+    return {
+      ok: true,
+      rules: []
+    };
   }
 
-  return rules
-    .map(function (rule, index) {
-      return aerpNormalizeAuthorizationRule_(rule, index);
-    })
-    .filter(function (rule) {
-      return rule !== null;
-    });
+  const normalizedRules = [];
+
+  try {
+    for (let index = 0; index < rules.length; index += 1) {
+      const ruleResult = aerpNormalizeAuthorizationRule_(rules[index], index);
+
+      if (!ruleResult.ok) {
+        return {
+          ok: false,
+          rules: []
+        };
+      }
+
+      if (ruleResult.rule) {
+        normalizedRules.push(ruleResult.rule);
+      }
+    }
+  } catch {
+    return {
+      ok: false,
+      rules: []
+    };
+  }
+
+  return {
+    ok: true,
+    rules: normalizedRules
+  };
 }
 
 /**
@@ -715,53 +796,114 @@ function aerpNormalizeAuthorizationRules_(rules) {
  *
  * @param {*} rule Regla original.
  * @param {number} index PosiciÃ³n original.
- * @return {?Object} Regla normalizada.
+ * @return {{ok: boolean, rule: ?Object}} Regla normalizada.
  */
 function aerpNormalizeAuthorizationRule_(rule, index) {
   if (!rule || typeof rule !== 'object') {
-    return null;
+    return {
+      ok: true,
+      rule: null
+    };
+  }
+
+  if (!aerpIsPlainAuthorizationObject_(rule)) {
+    return {
+      ok: false,
+      rule: null
+    };
   }
 
   const effect = aerpNormalizeAuthorizationString_(rule.effect).toUpperCase();
 
   if (effect !== AERP_AUTHORIZATION_DECISION.ALLOW && effect !== AERP_AUTHORIZATION_DECISION.DENY) {
-    return null;
+    return {
+      ok: true,
+      rule: null
+    };
   }
 
   const priorityNumber = Number(rule.priority);
 
+  const conditionProperty = Object.getOwnPropertyDescriptor(rule, 'conditions');
+
+  const conditionResult = conditionProperty
+    ? conditionProperty.get || conditionProperty.set
+      ? {
+          ok: false,
+          conditions: []
+        }
+      : aerpNormalizeAuthorizationConditions_(conditionProperty.value)
+    : {
+        ok: true,
+        conditions: []
+      };
+
+  if (!conditionResult.ok) {
+    return {
+      ok: false,
+      rule: null
+    };
+  }
+
+  const metadataProperty = Object.getOwnPropertyDescriptor(rule, 'metadata');
+
+  const metadataResult = metadataProperty
+    ? metadataProperty.get || metadataProperty.set
+      ? {
+          ok: false,
+          value: null
+        }
+      : aerpCloneAuthorizationJsonSafe_(
+          metadataProperty.value,
+          AERP_AUTHORIZATION_CONDITION_LIMITS.metadataDepth
+        )
+    : {
+        ok: true,
+        value: {}
+      };
+
+  if (!metadataResult.ok || !aerpIsPlainAuthorizationObject_(metadataResult.value)) {
+    return {
+      ok: false,
+      rule: null
+    };
+  }
+
   return {
-    id: aerpNormalizeAuthorizationString_(rule.id) || 'AUTH_RULE_' + String(index + 1),
+    ok: true,
+    rule: {
+      id: aerpNormalizeAuthorizationString_(rule.id) || 'AUTH_RULE_' + String(index + 1),
 
-    name: aerpNormalizeAuthorizationString_(rule.name),
+      name: aerpNormalizeAuthorizationString_(rule.name),
 
-    description: aerpNormalizeAuthorizationString_(rule.description),
+      description: aerpNormalizeAuthorizationString_(rule.description),
 
-    enabled: rule.enabled !== false,
+      enabled: rule.enabled !== false,
 
-    effect: effect,
+      effect: effect,
 
-    priority: Number.isFinite(priorityNumber) ? priorityNumber : 0,
+      priority: Number.isFinite(priorityNumber) ? priorityNumber : 0,
 
-    subjectTypes: aerpNormalizeAuthorizationRuleValues_(rule.subjectTypes || rule.subjectType),
+      subjectTypes: aerpNormalizeAuthorizationRuleValues_(rule.subjectTypes || rule.subjectType),
 
-    subjectIds: aerpNormalizeAuthorizationRuleValues_(rule.subjectIds || rule.subjectId),
+      subjectIds: aerpNormalizeAuthorizationRuleValues_(rule.subjectIds || rule.subjectId),
 
-    roles: aerpNormalizeAuthorizationRuleValues_(rule.roles || rule.role),
+      roles: aerpNormalizeAuthorizationRuleValues_(rule.roles || rule.role),
 
-    actions: aerpNormalizeAuthorizationRuleValues_(rule.actions || rule.action),
+      actions: aerpNormalizeAuthorizationRuleValues_(rule.actions || rule.action),
 
-    resourceTypes: aerpNormalizeAuthorizationRuleValues_(rule.resourceTypes || rule.resourceType),
+      resourceTypes: aerpNormalizeAuthorizationRuleValues_(rule.resourceTypes || rule.resourceType),
 
-    resourceIds: aerpNormalizeAuthorizationRuleValues_(
-      rule.resourceIds || rule.resourceId || rule.resource
-    ),
+      resourceIds: aerpNormalizeAuthorizationRuleValues_(
+        rule.resourceIds || rule.resourceId || rule.resource
+      ),
 
-    conditions: aerpNormalizeAuthorizationConditions_(rule.conditions),
+      conditions: conditionResult.conditions,
 
-    metadata: rule.metadata && typeof rule.metadata === 'object' ? rule.metadata : {},
+      metadata: metadataResult.value,
 
-    originalIndex: index
+      originalIndex: index
+    }
   };
 }
 
@@ -1293,6 +1435,28 @@ const AERP_AUTHORIZATION_CONDITION_OPERATOR = Object.freeze({
   ENDS_WITH: 'ENDS_WITH'
 });
 
+const AERP_AUTHORIZATION_CONDITION_FIELDS = Object.freeze([
+  'id',
+  'enabled',
+  'path',
+  'operator',
+  'value',
+  'caseSensitive',
+  'metadata'
+]);
+
+const AERP_AUTHORIZATION_CONDITION_FORBIDDEN_PATH_SEGMENTS = Object.freeze([
+  '__proto__',
+  'prototype',
+  'constructor'
+]);
+
+const AERP_AUTHORIZATION_CONDITION_LIMITS = Object.freeze({
+  pathLength: 256,
+  pathDepth: 8,
+  metadataDepth: 8
+});
+
 /**
  * Normaliza una colecciÃ³n de condiciones.
  *
@@ -1307,20 +1471,66 @@ const AERP_AUTHORIZATION_CONDITION_OPERATOR = Object.freeze({
  * }
  *
  * @param {*} conditions Condiciones originales.
- * @return {Object[]} Condiciones normalizadas.
+ * @return {{ok: boolean, conditions: Object[]}} Condiciones normalizadas.
  */
 function aerpNormalizeAuthorizationConditions_(conditions) {
-  if (!Array.isArray(conditions)) {
-    return [];
+  if (!Array.isArray(conditions) || Object.getPrototypeOf(conditions) !== Array.prototype) {
+    return {
+      ok: false,
+      conditions: []
+    };
   }
 
-  return conditions
-    .map(function (condition, index) {
-      return aerpNormalizeAuthorizationCondition_(condition, index);
-    })
-    .filter(function (condition) {
-      return condition !== null;
+  const normalizedConditions = [];
+
+  try {
+    const descriptors = Object.getOwnPropertyDescriptors(conditions);
+    const keys = Object.keys(descriptors).filter(function (key) {
+      return key !== 'length';
     });
+
+    if (
+      keys.length !== conditions.length ||
+      Object.getOwnPropertySymbols(conditions).length > 0 ||
+      keys.some(function (key) {
+        return !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= conditions.length;
+      }) ||
+      keys.some(function (key) {
+        return descriptors[key].get || descriptors[key].set;
+      })
+    ) {
+      return {
+        ok: false,
+        conditions: []
+      };
+    }
+
+    for (let index = 0; index < conditions.length; index += 1) {
+      const conditionResult = aerpNormalizeAuthorizationCondition_(
+        descriptors[String(index)].value,
+        index
+      );
+
+      if (!conditionResult.ok) {
+        return {
+          ok: false,
+          conditions: []
+        };
+      }
+
+      normalizedConditions.push(conditionResult.condition);
+    }
+  } catch {
+    return {
+      ok: false,
+      conditions: []
+    };
+  }
+
+  return {
+    ok: true,
+    conditions: normalizedConditions
+  };
 }
 
 /**
@@ -1328,42 +1538,139 @@ function aerpNormalizeAuthorizationConditions_(conditions) {
  *
  * @param {*} condition CondiciÃ³n original.
  * @param {number} index PosiciÃ³n original.
- * @return {?Object}
+ * @return {{ok: boolean, condition: ?Object}}
  */
 function aerpNormalizeAuthorizationCondition_(condition, index) {
-  if (!condition || typeof condition !== 'object') {
-    return null;
+  if (!aerpIsPlainAuthorizationObject_(condition)) {
+    return {
+      ok: false,
+      condition: null
+    };
   }
 
-  const path = aerpNormalizeAuthorizationString_(condition.path);
+  const descriptors = Object.getOwnPropertyDescriptors(condition);
+  const fields = Object.keys(descriptors);
 
-  const operator = aerpNormalizeAuthorizationString_(condition.operator).toUpperCase();
-
-  if (!path) {
-    return null;
+  if (
+    Object.getOwnPropertySymbols(condition).length > 0 ||
+    fields.some(function (field) {
+      return AERP_AUTHORIZATION_CONDITION_FIELDS.indexOf(field) === -1;
+    }) ||
+    fields.some(function (field) {
+      return descriptors[field].get || descriptors[field].set;
+    })
+  ) {
+    return {
+      ok: false,
+      condition: null
+    };
   }
 
-  if (!aerpIsSupportedAuthorizationConditionOperator_(operator)) {
-    return null;
+  const pathDescriptor = descriptors.path;
+  const operatorDescriptor = descriptors.operator;
+
+  if (
+    !pathDescriptor ||
+    typeof pathDescriptor.value !== 'string' ||
+    !aerpIsValidAuthorizationConditionPath_(pathDescriptor.value)
+  ) {
+    return {
+      ok: false,
+      condition: null
+    };
+  }
+
+  if (
+    !operatorDescriptor ||
+    typeof operatorDescriptor.value !== 'string' ||
+    !aerpIsSupportedAuthorizationConditionOperator_(operatorDescriptor.value)
+  ) {
+    return {
+      ok: false,
+      condition: null
+    };
+  }
+
+  const operator = operatorDescriptor.value;
+
+  if (descriptors.enabled && typeof descriptors.enabled.value !== 'boolean') {
+    return {
+      ok: false,
+      condition: null
+    };
+  }
+
+  if (descriptors.caseSensitive && typeof descriptors.caseSensitive.value !== 'boolean') {
+    return {
+      ok: false,
+      condition: null
+    };
+  }
+
+  const hasValue = Boolean(descriptors.value);
+
+  if (!aerpIsValidAuthorizationConditionExpectedValue_(operator, hasValue, descriptors.value)) {
+    return {
+      ok: false,
+      condition: null
+    };
+  }
+
+  if (
+    descriptors.caseSensitive &&
+    !aerpAuthorizationConditionSupportsCaseSensitivity_(operator, hasValue, descriptors.value)
+  ) {
+    return {
+      ok: false,
+      condition: null
+    };
+  }
+
+  const metadataResult = descriptors.metadata
+    ? aerpCloneAuthorizationJsonSafe_(
+        descriptors.metadata.value,
+        AERP_AUTHORIZATION_CONDITION_LIMITS.metadataDepth
+      )
+    : {
+        ok: true,
+        value: {}
+      };
+
+  if (!metadataResult.ok || !aerpIsPlainAuthorizationObject_(metadataResult.value)) {
+    return {
+      ok: false,
+      condition: null
+    };
+  }
+
+  const id = descriptors.id ? descriptors.id.value : '';
+
+  if (descriptors.id && (typeof id !== 'string' || !id.trim())) {
+    return {
+      ok: false,
+      condition: null
+    };
   }
 
   return {
-    id: aerpNormalizeAuthorizationString_(condition.id) || 'AUTH_CONDITION_' + String(index + 1),
+    ok: true,
+    condition: {
+      id: id ? id.trim() : 'AUTH_CONDITION_' + String(index + 1),
 
-    enabled: condition.enabled !== false,
+      enabled: descriptors.enabled ? descriptors.enabled.value : true,
 
-    path: path,
+      path: pathDescriptor.value,
 
-    operator: operator,
+      operator: operator,
 
-    value: condition.value,
+      value: hasValue ? descriptors.value.value : undefined,
 
-    caseSensitive: condition.caseSensitive === true,
+      caseSensitive: descriptors.caseSensitive ? descriptors.caseSensitive.value : false,
 
-    metadata:
-      condition.metadata && typeof condition.metadata === 'object' ? condition.metadata : {},
+      metadata: metadataResult.value,
 
-    originalIndex: index
+      originalIndex: index
+    }
   };
 }
 
@@ -1374,9 +1681,379 @@ function aerpNormalizeAuthorizationCondition_(condition, index) {
  * @return {boolean}
  */
 function aerpIsSupportedAuthorizationConditionOperator_(operator) {
-  return Object.keys(AERP_AUTHORIZATION_CONDITION_OPERATOR).some(function (key) {
-    return AERP_AUTHORIZATION_CONDITION_OPERATOR[key] === operator;
+  return Object.prototype.hasOwnProperty.call(AERP_AUTHORIZATION_CONDITION_OPERATOR, operator);
+}
+
+/**
+ * Indica si un operador admite comparación textual configurable.
+ *
+ * @param {string} operator Operador.
+ * @param {boolean} hasValue Presencia explícita de value.
+ * @param {Object=} valueDescriptor Descriptor de value.
+ * @return {boolean}
+ */
+function aerpAuthorizationConditionSupportsCaseSensitivity_(operator, hasValue, valueDescriptor) {
+  if (!hasValue || !valueDescriptor) {
+    return false;
+  }
+
+  const value = valueDescriptor.value;
+
+  if (
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.EQ ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.NEQ ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.CONTAINS ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.STARTS_WITH ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.ENDS_WITH
+  ) {
+    return typeof value === 'string';
+  }
+
+  if (
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.IN ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.NOT_IN
+  ) {
+    return aerpIsHomogeneousAuthorizationConditionArray_(value) && typeof value[0] === 'string';
+  }
+
+  return false;
+}
+
+/**
+ * Valida el valor esperado según la matriz cerrada de operadores.
+ *
+ * @param {string} operator Operador.
+ * @param {boolean} hasValue Presencia explícita de value.
+ * @param {Object=} valueDescriptor Descriptor de value.
+ * @return {boolean}
+ */
+function aerpIsValidAuthorizationConditionExpectedValue_(operator, hasValue, valueDescriptor) {
+  if (
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.EXISTS ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.NOT_EXISTS
+  ) {
+    return !hasValue;
+  }
+
+  if (!hasValue) {
+    return false;
+  }
+
+  const value = valueDescriptor.value;
+
+  if (
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.EQ ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.NEQ
+  ) {
+    return aerpIsAuthorizationConditionScalar_(value, true);
+  }
+
+  if (
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.IN ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.NOT_IN
+  ) {
+    return aerpIsHomogeneousAuthorizationConditionArray_(value);
+  }
+
+  if (
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.GT ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.GTE ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.LT ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.LTE
+  ) {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+
+  if (operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.CONTAINS) {
+    return aerpIsAuthorizationConditionScalar_(value, false);
+  }
+
+  if (
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.STARTS_WITH ||
+    operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.ENDS_WITH
+  ) {
+    return typeof value === 'string' && value.length > 0;
+  }
+
+  return false;
+}
+
+/**
+ * Valida un escalar declarativo sin coerción.
+ *
+ * @param {*} value Valor.
+ * @param {boolean} allowNull Permitir null.
+ * @return {boolean}
+ */
+function aerpIsAuthorizationConditionScalar_(value, allowNull) {
+  if (value === null) {
+    return allowNull === true;
+  }
+
+  return (
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  );
+}
+
+/**
+ * Valida un array no vacío, homogéneo y escalar.
+ *
+ * @param {*} value Valor.
+ * @return {boolean}
+ */
+function aerpIsHomogeneousAuthorizationConditionArray_(value) {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+    return false;
+  }
+
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Object.keys(descriptors).filter(function (key) {
+    return key !== 'length';
   });
+
+  if (
+    value.length === 0 ||
+    keys.length !== value.length ||
+    Object.getOwnPropertySymbols(value).length > 0 ||
+    keys.some(function (key) {
+      return !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length;
+    }) ||
+    keys.some(function (key) {
+      return descriptors[key].get || descriptors[key].set;
+    })
+  ) {
+    return false;
+  }
+
+  const items = keys
+    .map(function (key) {
+      return {
+        index: Number(key),
+        value: descriptors[key].value
+      };
+    })
+    .sort(function (first, second) {
+      return first.index - second.index;
+    })
+    .map(function (item) {
+      return item.value;
+    });
+
+  const expectedType = typeof items[0];
+
+  if (!aerpIsAuthorizationConditionScalar_(items[0], false)) {
+    return false;
+  }
+
+  return items.every(function (item) {
+    return typeof item === expectedType && aerpIsAuthorizationConditionScalar_(item, false);
+  });
+}
+
+/**
+ * Comprueba que un valor sea un objeto plano sin prototipo personalizado.
+ *
+ * @param {*} value Valor.
+ * @return {boolean}
+ */
+function aerpIsPlainAuthorizationObject_(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+
+  return prototype === Object.prototype || prototype === null;
+}
+
+/**
+ * Clona metadata declarativa JSON-safe sin ejecutar accessors.
+ *
+ * @param {*} value Valor.
+ * @param {number} remainingDepth Profundidad restante.
+ * @return {{ok: boolean, value: *}}
+ */
+function aerpCloneAuthorizationJsonSafe_(value, remainingDepth) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+    return {
+      ok: true,
+      value: value
+    };
+  }
+
+  if (typeof value === 'number') {
+    return {
+      ok: Number.isFinite(value),
+      value: Number.isFinite(value) ? value : null
+    };
+  }
+
+  if (!Number.isInteger(remainingDepth) || remainingDepth <= 0 || !value) {
+    return {
+      ok: false,
+      value: null
+    };
+  }
+
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      return {
+        ok: false,
+        value: null
+      };
+    }
+
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Object.keys(descriptors).filter(function (key) {
+      return key !== 'length';
+    });
+
+    if (
+      keys.length !== value.length ||
+      Object.getOwnPropertySymbols(value).length > 0 ||
+      keys.some(function (key) {
+        return !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length;
+      }) ||
+      keys.some(function (key) {
+        return descriptors[key].get || descriptors[key].set;
+      })
+    ) {
+      return {
+        ok: false,
+        value: null
+      };
+    }
+
+    const clone = [];
+
+    for (let index = 0; index < value.length; index += 1) {
+      const itemResult = aerpCloneAuthorizationJsonSafe_(
+        descriptors[String(index)].value,
+        remainingDepth - 1
+      );
+
+      if (!itemResult.ok) {
+        return {
+          ok: false,
+          value: null
+        };
+      }
+
+      clone.push(itemResult.value);
+    }
+
+    return {
+      ok: true,
+      value: clone
+    };
+  }
+
+  if (!aerpIsPlainAuthorizationObject_(value)) {
+    return {
+      ok: false,
+      value: null
+    };
+  }
+
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Object.keys(descriptors);
+
+  if (
+    Object.getOwnPropertySymbols(value).length > 0 ||
+    keys.some(function (key) {
+      return descriptors[key].get || descriptors[key].set;
+    }) ||
+    keys.some(function (key) {
+      return AERP_AUTHORIZATION_CONDITION_FORBIDDEN_PATH_SEGMENTS.indexOf(key) !== -1;
+    })
+  ) {
+    return {
+      ok: false,
+      value: null
+    };
+  }
+
+  const clone = {};
+
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    const propertyResult = aerpCloneAuthorizationJsonSafe_(
+      descriptors[key].value,
+      remainingDepth - 1
+    );
+
+    if (!propertyResult.ok) {
+      return {
+        ok: false,
+        value: null
+      };
+    }
+
+    clone[key] = propertyResult.value;
+  }
+
+  return {
+    ok: true,
+    value: clone
+  };
+}
+
+/**
+ * Valida una ruta declarativa contra raíces y segmentos cerrados.
+ *
+ * @param {*} path Ruta.
+ * @return {boolean}
+ */
+function aerpIsValidAuthorizationConditionPath_(path) {
+  if (
+    typeof path !== 'string' ||
+    !path ||
+    path !== path.trim() ||
+    path.length > AERP_AUTHORIZATION_CONDITION_LIMITS.pathLength
+  ) {
+    return false;
+  }
+
+  const segments = path.split('.');
+
+  if (
+    segments.length === 0 ||
+    segments.length > AERP_AUTHORIZATION_CONDITION_LIMITS.pathDepth ||
+    segments.some(function (segment) {
+      return (
+        !/^[A-Za-z][A-Za-z0-9_]*$/.test(segment) ||
+        AERP_AUTHORIZATION_CONDITION_FORBIDDEN_PATH_SEGMENTS.indexOf(segment) !== -1
+      );
+    })
+  ) {
+    return false;
+  }
+
+  if (segments.length === 1) {
+    return segments[0] === 'action';
+  }
+
+  if (segments[0] === 'context') {
+    return segments.length >= 2;
+  }
+
+  if (segments[0] === 'subject') {
+    return (
+      (segments.length === 2 && ['id', 'type', 'roles'].indexOf(segments[1]) !== -1) ||
+      (segments[1] === 'attributes' && segments.length >= 3)
+    );
+  }
+
+  if (segments[0] === 'resource') {
+    return (
+      (segments.length === 2 && ['id', 'type'].indexOf(segments[1]) !== -1) ||
+      (segments[1] === 'attributes' && segments.length >= 3)
+    );
+  }
+
+  return false;
 }
 
 /**
@@ -1441,9 +2118,29 @@ function aerpEvaluateAuthorizationCondition_(condition, request) {
   try {
     const resolution = aerpResolveAuthorizationPath_(request, condition.path);
 
+    if (!resolution.ok) {
+      return {
+        ok: false,
+        pathExists: false,
+        errorCode: AERP_AUTHORIZATION_CONDITION_REASON_CODE.CONDITION_EVALUATION_ERROR
+      };
+    }
+
     const actualValue = resolution.value;
 
     const expectedValue = condition.value;
+
+    if (
+      !resolution.exists &&
+      condition.operator !== AERP_AUTHORIZATION_CONDITION_OPERATOR.EXISTS &&
+      condition.operator !== AERP_AUTHORIZATION_CONDITION_OPERATOR.NOT_EXISTS
+    ) {
+      return {
+        ok: false,
+        pathExists: false,
+        errorCode: null
+      };
+    }
 
     const result = aerpApplyAuthorizationConditionOperator_(
       condition.operator,
@@ -1458,42 +2155,14 @@ function aerpEvaluateAuthorizationCondition_(condition, request) {
 
     return {
       ok: result === true,
-
-      conditionId: condition.id,
-
-      path: condition.path,
-
-      operator: condition.operator,
-
-      expectedValue: expectedValue,
-
-      actualValue: actualValue,
-
       pathExists: resolution.exists,
-
-      error: null
+      errorCode: null
     };
-  } catch (error) {
+  } catch {
     return {
       ok: false,
-
-      conditionId: condition.id,
-
-      path: condition.path,
-
-      operator: condition.operator,
-
-      expectedValue: condition.value,
-
-      actualValue: null,
-
       pathExists: false,
-
-      error: {
-        name: error && error.name ? error.name : 'Error',
-
-        message: error && error.message ? error.message : String(error)
-      }
+      errorCode: AERP_AUTHORIZATION_CONDITION_REASON_CODE.CONDITION_EVALUATION_ERROR
     };
   }
 }
@@ -1514,52 +2183,52 @@ function aerpEvaluateAuthorizationCondition_(condition, request) {
  * @return {{exists: boolean, value: *}}
  */
 function aerpResolveAuthorizationPath_(source, path) {
-  const normalizedPath = aerpNormalizeAuthorizationString_(path);
-
-  if (!normalizedPath) {
+  if (!aerpIsValidAuthorizationConditionPath_(path)) {
     return {
+      ok: false,
       exists: false,
       value: undefined
     };
   }
 
-  const segments = normalizedPath
-    .split('.')
-    .map(function (segment) {
-      return segment.trim();
-    })
-    .filter(function (segment) {
-      return Boolean(segment);
-    });
-
-  if (segments.length === 0) {
-    return {
-      exists: false,
-      value: undefined
-    };
-  }
+  const segments = path.split('.');
 
   let current = source;
 
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index];
 
-    if (
-      current === null ||
-      current === undefined ||
-      typeof current !== 'object' ||
-      !Object.prototype.hasOwnProperty.call(current, segment)
-    ) {
+    if (current === null || current === undefined || typeof current !== 'object') {
       return {
+        ok: true,
         exists: false,
         value: undefined
       };
     }
 
-    current = current[segment];
+    const descriptor = Object.getOwnPropertyDescriptor(current, segment);
+
+    if (!descriptor) {
+      return {
+        ok: true,
+        exists: false,
+        value: undefined
+      };
+    }
+
+    if (descriptor.get || descriptor.set) {
+      return {
+        ok: false,
+        exists: false,
+        value: undefined
+      };
+    }
+
+    current = descriptor.value;
   }
 
   return {
+    ok: true,
     exists: true,
     value: current
   };
@@ -1578,6 +2247,46 @@ function aerpApplyAuthorizationConditionOperator_(operator, actualValue, expecte
   const comparisonOptions = options && typeof options === 'object' ? options : {};
 
   const exists = comparisonOptions.exists === true;
+
+  if (
+    (operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.EQ ||
+      operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.NEQ) &&
+    (!aerpIsAuthorizationConditionScalar_(actualValue, true) ||
+      typeof actualValue !== typeof expectedValue)
+  ) {
+    return false;
+  }
+
+  if (
+    (operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.IN ||
+      operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.NOT_IN) &&
+    (!aerpIsAuthorizationConditionScalar_(actualValue, false) ||
+      !aerpIsHomogeneousAuthorizationConditionArray_(expectedValue) ||
+      typeof actualValue !== typeof expectedValue[0])
+  ) {
+    return false;
+  }
+
+  if (
+    (operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.GT ||
+      operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.GTE ||
+      operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.LT ||
+      operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.LTE) &&
+    (typeof actualValue !== 'number' ||
+      typeof expectedValue !== 'number' ||
+      !Number.isFinite(actualValue) ||
+      !Number.isFinite(expectedValue))
+  ) {
+    return false;
+  }
+
+  if (
+    (operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.STARTS_WITH ||
+      operator === AERP_AUTHORIZATION_CONDITION_OPERATOR.ENDS_WITH) &&
+    (typeof actualValue !== 'string' || typeof expectedValue !== 'string')
+  ) {
+    return false;
+  }
 
   switch (operator) {
     case AERP_AUTHORIZATION_CONDITION_OPERATOR.EXISTS:
@@ -1687,10 +2396,14 @@ function aerpApplyAuthorizationConditionOperator_(operator, actualValue, expecte
  * @return {boolean}
  */
 function aerpAuthorizationValuesEqual_(actualValue, expectedValue, caseSensitive) {
-  if (typeof actualValue === 'string' || typeof expectedValue === 'string') {
-    let actualText = aerpNormalizeAuthorizationString_(actualValue);
+  if (typeof actualValue !== typeof expectedValue) {
+    return false;
+  }
 
-    let expectedText = aerpNormalizeAuthorizationString_(expectedValue);
+  if (typeof actualValue === 'string') {
+    let actualText = actualValue;
+
+    let expectedText = expectedValue;
 
     if (caseSensitive !== true) {
       actualText = actualText.toUpperCase();
@@ -1731,15 +2444,16 @@ function aerpAuthorizationValueInCollection_(actualValue, expectedValue, caseSen
  * @return {boolean}
  */
 function aerpCompareAuthorizationNumbers_(actualValue, expectedValue, comparator) {
-  const actualNumber = Number(actualValue);
-
-  const expectedNumber = Number(expectedValue);
-
-  if (!Number.isFinite(actualNumber) || !Number.isFinite(expectedNumber)) {
+  if (
+    typeof actualValue !== 'number' ||
+    typeof expectedValue !== 'number' ||
+    !Number.isFinite(actualValue) ||
+    !Number.isFinite(expectedValue)
+  ) {
     return false;
   }
 
-  return comparator(actualNumber, expectedNumber);
+  return comparator(actualValue, expectedValue);
 }
 
 /**
@@ -1756,18 +2470,22 @@ function aerpCompareAuthorizationNumbers_(actualValue, expectedValue, comparator
  */
 function aerpAuthorizationValueContains_(actualValue, expectedValue, caseSensitive) {
   if (Array.isArray(actualValue)) {
+    if (!aerpIsHomogeneousAuthorizationConditionArray_(actualValue)) {
+      return false;
+    }
+
     return actualValue.some(function (item) {
       return aerpAuthorizationValuesEqual_(item, expectedValue, caseSensitive);
     });
   }
 
-  if (actualValue === null || actualValue === undefined) {
+  if (typeof actualValue !== 'string' || typeof expectedValue !== 'string') {
     return false;
   }
 
-  let actualText = String(actualValue);
+  let actualText = actualValue;
 
-  let expectedText = String(expectedValue);
+  let expectedText = expectedValue;
 
   if (caseSensitive !== true) {
     actualText = actualText.toUpperCase();
@@ -1787,13 +2505,13 @@ function aerpAuthorizationValueContains_(actualValue, expectedValue, caseSensiti
  * @return {boolean}
  */
 function aerpAuthorizationStringStartsWith_(actualValue, expectedValue, caseSensitive) {
-  if (actualValue === null || actualValue === undefined) {
+  if (typeof actualValue !== 'string' || typeof expectedValue !== 'string') {
     return false;
   }
 
-  let actualText = String(actualValue);
+  let actualText = actualValue;
 
-  let expectedText = String(expectedValue);
+  let expectedText = expectedValue;
 
   if (caseSensitive !== true) {
     actualText = actualText.toUpperCase();
@@ -1813,13 +2531,13 @@ function aerpAuthorizationStringStartsWith_(actualValue, expectedValue, caseSens
  * @return {boolean}
  */
 function aerpAuthorizationStringEndsWith_(actualValue, expectedValue, caseSensitive) {
-  if (actualValue === null || actualValue === undefined) {
+  if (typeof actualValue !== 'string' || typeof expectedValue !== 'string') {
     return false;
   }
 
-  let actualText = String(actualValue);
+  let actualText = actualValue;
 
-  let expectedText = String(expectedValue);
+  let expectedText = expectedValue;
 
   if (caseSensitive !== true) {
     actualText = actualText.toUpperCase();
@@ -3156,4 +3874,762 @@ function testAuthorizationEmergencyDeny() {
   console.log('AERP-036 Emergency DENY Test: OK');
 
   return result;
+}
+
+/**
+ * Comprueba el schema cerrado, la matriz de tipos y el fail-closed completo
+ * de DT-SEC-04.
+ */
+function testAuthorizationStrictConditionValidation() {
+  const buildRequest = function (contextOverrides) {
+    return {
+      subject: {
+        id: 'strict.conditions@empresa.com',
+        type: 'USER',
+        roles: ['SECURITY_TEST'],
+        attributes: {
+          departmentId: 'VENTAS'
+        }
+      },
+      action: 'EDIT',
+      resource: {
+        type: 'TABLE',
+        id: 'PEDIDOS',
+        attributes: {
+          status: 'BORRADOR',
+          total: 10,
+          tags: ['URGENTE', 'INTERNO']
+        }
+      },
+      context: Object.assign(
+        {
+          companyId: 'EMPRESA_001',
+          channel: 'WEB',
+          count: 10,
+          active: true,
+          code: 'ABC-123'
+        },
+        contextOverrides || {}
+      )
+    };
+  };
+
+  const buildRule = function (conditions, overrides) {
+    return Object.assign(
+      {
+        id: 'RULE_STRICT_CONDITIONS',
+        enabled: true,
+        effect: AERP_AUTHORIZATION_DECISION.ALLOW,
+        priority: 100,
+        roles: ['SECURITY_TEST'],
+        actions: ['EDIT'],
+        resourceTypes: ['TABLE'],
+        resourceIds: ['PEDIDOS'],
+        conditions: conditions,
+        metadata: {
+          source: 'DT-SEC-04'
+        }
+      },
+      overrides || {}
+    );
+  };
+
+  const assertAllow = function (condition, message, request) {
+    const result = aerpAuthorize(request || buildRequest(), {
+      rules: [buildRule([condition])],
+      traceEnabled: true
+    });
+
+    if (result.decision !== AERP_AUTHORIZATION_DECISION.ALLOW || !result.allowed) {
+      throw new Error(message);
+    }
+  };
+
+  const assertInvalidCollection = function (rules, forbiddenText) {
+    const result = aerpAuthorize(buildRequest(), {
+      rules: rules,
+      traceEnabled: true
+    });
+
+    if (
+      result.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+      result.allowed ||
+      result.reason !== AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_RULES ||
+      result.reasonCode !== AERP_AUTHORIZATION_CONDITION_REASON_CODE.INVALID_CONDITION_SCHEMA ||
+      result.matchedRule !== null ||
+      result.decisionSummary !== null ||
+      result.validationErrors.length !== 1 ||
+      result.validationErrors[0] !== AERP_AUTHORIZATION_PUBLIC_ERROR.INVALID_AUTHORIZATION_RULES
+    ) {
+      throw new Error('Invalid condition collections must return a sanitized DENY.');
+    }
+
+    const serialized = JSON.stringify(result);
+
+    if (forbiddenText && serialized.indexOf(forbiddenText) !== -1) {
+      throw new Error('Invalid condition details were exposed publicly.');
+    }
+
+    if (
+      result.trace &&
+      JSON.stringify(result.trace).indexOf(
+        AERP_AUTHORIZATION_CONDITION_REASON_CODE.INVALID_CONDITION_SCHEMA
+      ) === -1
+    ) {
+      throw new Error('Expected a sanitized condition failure trace code.');
+    }
+
+    return result;
+  };
+
+  const operatorCases = [
+    {
+      path: 'context.companyId',
+      operator: 'EQ',
+      value: 'EMPRESA_001'
+    },
+    {
+      path: 'context.companyId',
+      operator: 'NEQ',
+      value: 'EMPRESA_999'
+    },
+    {
+      path: 'context.channel',
+      operator: 'IN',
+      value: ['WEB', 'APP']
+    },
+    {
+      path: 'context.channel',
+      operator: 'NOT_IN',
+      value: ['API', 'BATCH']
+    },
+    {
+      path: 'context.count',
+      operator: 'GT',
+      value: 5
+    },
+    {
+      path: 'context.count',
+      operator: 'GTE',
+      value: 10
+    },
+    {
+      path: 'context.count',
+      operator: 'LT',
+      value: 20
+    },
+    {
+      path: 'context.count',
+      operator: 'LTE',
+      value: 10
+    },
+    {
+      path: 'context.companyId',
+      operator: 'EXISTS'
+    },
+    {
+      path: 'context.missingValue',
+      operator: 'NOT_EXISTS'
+    },
+    {
+      path: 'resource.attributes.tags',
+      operator: 'CONTAINS',
+      value: 'URGENTE'
+    },
+    {
+      path: 'context.code',
+      operator: 'STARTS_WITH',
+      value: 'ABC'
+    },
+    {
+      path: 'context.code',
+      operator: 'ENDS_WITH',
+      value: '123'
+    }
+  ];
+
+  operatorCases.forEach(function (condition) {
+    assertAllow(condition, 'Supported operator failed strict validation: ' + condition.operator);
+  });
+
+  assertAllow(
+    {
+      path: 'context.active',
+      operator: 'EQ',
+      value: true
+    },
+    'Boolean equality must remain supported.'
+  );
+
+  assertAllow(
+    {
+      path: 'context.nullable',
+      operator: 'EQ',
+      value: null
+    },
+    'Null equality must be exact.',
+    buildRequest({
+      nullable: null
+    })
+  );
+
+  const invalidConditions = [
+    {
+      path: 'context.companyId',
+      operator: 'UNKNOWN',
+      value: 'PRIVATE_UNKNOWN_OPERATOR'
+    },
+    {
+      path: 'context.companyId',
+      operator: 'eq',
+      value: 'PRIVATE_LOWERCASE_OPERATOR'
+    },
+    {
+      operator: 'EQ',
+      value: 'PRIVATE_MISSING_PATH'
+    },
+    {
+      operator: 'EXISTS'
+    },
+    {
+      operator: 'NOT_EXISTS'
+    },
+    {
+      path: 'context..companyId',
+      operator: 'EQ',
+      value: 'PRIVATE_INVALID_PATH'
+    },
+    {
+      path: 'context.__proto__.companyId',
+      operator: 'EQ',
+      value: 'PRIVATE_FORBIDDEN_PATH'
+    },
+    {
+      path: 'context.companyId',
+      operator: 'EXISTS',
+      value: 'PRIVATE_FORBIDDEN_EXISTS_VALUE'
+    },
+    {
+      path: 'context.missingValue',
+      operator: 'NOT_EXISTS',
+      value: 'PRIVATE_FORBIDDEN_NOT_EXISTS_VALUE'
+    },
+    {
+      path: 'context.companyId',
+      operator: 'EQ',
+      value: 'EMPRESA_001',
+      unknownSecurityField: 'PRIVATE_UNKNOWN_FIELD'
+    },
+    {
+      path: 'context.companyId',
+      operator: 'EQ',
+      value: {}
+    },
+    {
+      path: 'context.channel',
+      operator: 'IN',
+      value: []
+    },
+    {
+      path: 'context.channel',
+      operator: 'IN',
+      value: ['WEB', 1]
+    },
+    {
+      path: 'context.channel',
+      operator: 'IN',
+      value: [['WEB']]
+    },
+    {
+      path: 'context.count',
+      operator: 'GT',
+      value: '5'
+    },
+    {
+      path: 'context.companyId',
+      operator: 'CONTAINS',
+      value: {}
+    },
+    {
+      path: 'context.code',
+      operator: 'STARTS_WITH',
+      value: 1
+    }
+  ];
+
+  invalidConditions.forEach(function (condition) {
+    assertInvalidCollection(
+      [buildRule([condition])],
+      typeof condition.value === 'string' && condition.value.indexOf('PRIVATE_') === 0
+        ? condition.value
+        : null
+    );
+  });
+
+  [null, undefined, 'condition', {}, 1].forEach(function (conditions) {
+    assertInvalidCollection([buildRule(conditions)]);
+  });
+
+  let conditionGetterCalls = 0;
+  const accessorCondition = {
+    operator: 'EQ',
+    value: 'PRIVATE_ACCESSOR_VALUE'
+  };
+
+  Object.defineProperty(accessorCondition, 'path', {
+    enumerable: true,
+    get: function () {
+      conditionGetterCalls += 1;
+      throw new Error('PRIVATE_CONDITION_GETTER');
+    }
+  });
+
+  assertInvalidCollection([buildRule([accessorCondition])], 'PRIVATE_CONDITION_GETTER');
+
+  if (conditionGetterCalls !== 0) {
+    throw new Error('Condition accessors must be rejected without execution.');
+  }
+
+  let collectionGetterCalls = 0;
+  const accessorRule = buildRule([]);
+
+  Object.defineProperty(accessorRule, 'conditions', {
+    enumerable: true,
+    get: function () {
+      collectionGetterCalls += 1;
+      throw new Error('PRIVATE_COLLECTION_GETTER');
+    }
+  });
+
+  assertInvalidCollection([accessorRule], 'PRIVATE_COLLECTION_GETTER');
+
+  if (collectionGetterCalls !== 0) {
+    throw new Error('Condition collection accessors must be rejected without execution.');
+  }
+
+  const unsafePrototypeCondition = Object.create({
+    inherited: true
+  });
+  unsafePrototypeCondition.path = 'context.companyId';
+  unsafePrototypeCondition.operator = 'EQ';
+  unsafePrototypeCondition.value = 'EMPRESA_001';
+  assertInvalidCollection([buildRule([unsafePrototypeCondition])]);
+
+  const unsafeMetadata = {};
+  Object.defineProperty(unsafeMetadata, 'secret', {
+    enumerable: true,
+    get: function () {
+      throw new Error('PRIVATE_METADATA_GETTER');
+    }
+  });
+  assertInvalidCollection([
+    buildRule([
+      {
+        path: 'context.companyId',
+        operator: 'EQ',
+        value: 'EMPRESA_001',
+        metadata: unsafeMetadata
+      }
+    ])
+  ]);
+
+  const validSibling = buildRule([], {
+    id: 'RULE_VALID_ALLOW_SIBLING'
+  });
+  const malformedSibling = buildRule(
+    [
+      {
+        operator: 'EQ',
+        value: 'PRIVATE_MALFORMED_SIBLING'
+      }
+    ],
+    {
+      id: 'RULE_MALFORMED_SIBLING'
+    }
+  );
+  assertInvalidCollection([validSibling, malformedSibling], 'PRIVATE_MALFORMED_SIBLING');
+  assertInvalidCollection([
+    buildRule(
+      [
+        {
+          operator: 'EQ',
+          value: 'PRIVATE_DISABLED_MALFORMED'
+        }
+      ],
+      {
+        enabled: false
+      }
+    ),
+    validSibling
+  ]);
+
+  const numericStringResult = aerpAuthorize(buildRequest({ count: '10' }), {
+    rules: [
+      buildRule([
+        {
+          path: 'context.count',
+          operator: 'EQ',
+          value: 10
+        }
+      ])
+    ]
+  });
+
+  if (numericStringResult.decision !== AERP_AUTHORIZATION_DECISION.DENY) {
+    throw new Error('Condition evaluation must not coerce strings into numbers.');
+  }
+
+  const incompatibleNegativeResult = aerpAuthorize(buildRequest({ count: '10' }), {
+    rules: [
+      buildRule([
+        {
+          path: 'context.count',
+          operator: 'NEQ',
+          value: 10
+        }
+      ])
+    ]
+  });
+
+  if (incompatibleNegativeResult.decision !== AERP_AUTHORIZATION_DECISION.DENY) {
+    throw new Error('Incompatible NEQ types must not authorize through negation.');
+  }
+
+  const omittedConditionsRule = buildRule([]);
+  delete omittedConditionsRule.conditions;
+  const omittedResult = aerpAuthorize(buildRequest(), {
+    rules: [omittedConditionsRule]
+  });
+  const emptyResult = aerpAuthorize(buildRequest(), {
+    rules: [buildRule([])]
+  });
+
+  if (
+    omittedResult.decision !== AERP_AUTHORIZATION_DECISION.ALLOW ||
+    emptyResult.decision !== AERP_AUTHORIZATION_DECISION.ALLOW
+  ) {
+    throw new Error('Omitted and empty conditions must remain compatible.');
+  }
+
+  [
+    {
+      path: 'context.companyId',
+      operator: 'EQ',
+      value: 'EMPRESA_001',
+      caseSensitive: true
+    },
+    {
+      path: 'context.companyId',
+      operator: 'NEQ',
+      value: 'empresa_999',
+      caseSensitive: true
+    },
+    {
+      path: 'context.channel',
+      operator: 'IN',
+      value: ['WEB'],
+      caseSensitive: true
+    },
+    {
+      path: 'context.channel',
+      operator: 'NOT_IN',
+      value: ['web'],
+      caseSensitive: true
+    },
+    {
+      path: 'context.code',
+      operator: 'CONTAINS',
+      value: 'ABC',
+      caseSensitive: true
+    },
+    {
+      path: 'context.code',
+      operator: 'STARTS_WITH',
+      value: 'ABC',
+      caseSensitive: true
+    },
+    {
+      path: 'context.code',
+      operator: 'ENDS_WITH',
+      value: '123',
+      caseSensitive: true
+    }
+  ].forEach(function (condition) {
+    assertAllow(condition, 'Valid textual caseSensitive condition was rejected.');
+  });
+
+  [
+    {
+      path: 'context.count',
+      operator: 'EQ',
+      value: 10,
+      caseSensitive: false
+    },
+    {
+      path: 'context.active',
+      operator: 'NEQ',
+      value: false,
+      caseSensitive: false
+    },
+    {
+      path: 'context.nullable',
+      operator: 'EQ',
+      value: null,
+      caseSensitive: false
+    },
+    {
+      path: 'context.count',
+      operator: 'IN',
+      value: [10, 20],
+      caseSensitive: false
+    },
+    {
+      path: 'context.active',
+      operator: 'NOT_IN',
+      value: [false],
+      caseSensitive: false
+    },
+    {
+      path: 'context.count',
+      operator: 'GT',
+      value: 5,
+      caseSensitive: false
+    },
+    {
+      path: 'context.companyId',
+      operator: 'EXISTS',
+      caseSensitive: false
+    }
+  ].forEach(function (condition) {
+    assertInvalidCollection([buildRule([condition])]);
+  });
+
+  [
+    {
+      path: 'context.count',
+      operator: 'IN',
+      value: [10, 20]
+    },
+    {
+      path: 'context.count',
+      operator: 'NOT_IN',
+      value: [20, 30]
+    },
+    {
+      path: 'context.active',
+      operator: 'IN',
+      value: [true]
+    },
+    {
+      path: 'context.active',
+      operator: 'NOT_IN',
+      value: [false]
+    },
+    {
+      path: 'context.code',
+      operator: 'CONTAINS',
+      value: 'ABC'
+    },
+    {
+      path: 'resource.attributes.tags',
+      operator: 'CONTAINS',
+      value: 'URGENTE'
+    },
+    {
+      path: 'context.numericValues',
+      operator: 'CONTAINS',
+      value: 2
+    },
+    {
+      path: 'context.booleanValues',
+      operator: 'CONTAINS',
+      value: true
+    }
+  ].forEach(function (condition) {
+    assertAllow(
+      condition,
+      'Valid strict array or CONTAINS type was rejected.',
+      buildRequest({
+        numericValues: [1, 2, 3],
+        booleanValues: [false, true]
+      })
+    );
+  });
+
+  const incompatibleNotInResult = aerpAuthorize(buildRequest({ count: '10' }), {
+    rules: [
+      buildRule([
+        {
+          path: 'context.count',
+          operator: 'NOT_IN',
+          value: [10, 20]
+        }
+      ])
+    ]
+  });
+
+  if (incompatibleNotInResult.decision !== AERP_AUTHORIZATION_DECISION.DENY) {
+    throw new Error('Incompatible NOT_IN types must fail closed.');
+  }
+
+  [NaN, Infinity, -Infinity].forEach(function (unsafeNumber) {
+    assertInvalidCollection([
+      buildRule([
+        {
+          path: 'context.count',
+          operator: 'GTE',
+          value: unsafeNumber
+        }
+      ])
+    ]);
+    assertInvalidCollection([
+      buildRule([
+        {
+          path: 'context.count',
+          operator: 'IN',
+          value: [unsafeNumber]
+        }
+      ])
+    ]);
+  });
+
+  const arrayWithHole = [];
+  arrayWithHole.length = 2;
+  arrayWithHole[1] = 'WEB';
+
+  let arrayAccessorCalls = 0;
+  const arrayWithAccessor = ['WEB'];
+  Object.defineProperty(arrayWithAccessor, '0', {
+    enumerable: true,
+    get: function () {
+      arrayAccessorCalls += 1;
+      throw new Error('PRIVATE_ARRAY_ACCESSOR');
+    }
+  });
+
+  const arrayWithProperty = ['WEB'];
+  arrayWithProperty.extra = 'PRIVATE_ARRAY_PROPERTY';
+
+  const arrayWithPrototype = ['WEB'];
+  Object.setPrototypeOf(arrayWithPrototype, {});
+
+  [arrayWithHole, arrayWithAccessor, arrayWithProperty, arrayWithPrototype].forEach(
+    function (unsafeArray) {
+      assertInvalidCollection([
+        buildRule([
+          {
+            path: 'context.channel',
+            operator: 'IN',
+            value: unsafeArray
+          }
+        ])
+      ]);
+    }
+  );
+
+  if (arrayAccessorCalls !== 0) {
+    throw new Error('Array accessors must be rejected without execution.');
+  }
+
+  assertAllow(
+    {
+      path: 'context.companyId',
+      operator: 'EQ',
+      value: 'EMPRESA_001',
+      metadata: {
+        source: 'BACKEND',
+        nested: {
+          enabled: true,
+          values: ['A', 1, false, null]
+        }
+      }
+    },
+    'Nested JSON-safe metadata must remain compatible.'
+  );
+
+  const customMetadata = Object.create({
+    inherited: true
+  });
+  customMetadata.source = 'PRIVATE_CUSTOM_METADATA';
+  assertInvalidCollection([
+    buildRule([
+      {
+        path: 'context.companyId',
+        operator: 'EQ',
+        value: 'EMPRESA_001',
+        metadata: customMetadata
+      }
+    ])
+  ]);
+
+  const customPrototypeRule = Object.create({
+    inherited: true
+  });
+  Object.keys(validSibling).forEach(function (key) {
+    customPrototypeRule[key] = validSibling[key];
+  });
+  assertInvalidCollection([customPrototypeRule]);
+
+  const assertThrowingProxyDenied = function (proxyValue, privateMessage, wrapAsCondition) {
+    const rules = wrapAsCondition ? [buildRule([proxyValue])] : [proxyValue];
+    const result = assertInvalidCollection(rules, privateMessage);
+
+    if (
+      result.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+      JSON.stringify(result).indexOf(privateMessage) !== -1
+    ) {
+      throw new Error('Throwing Proxy traps must return a sanitized DENY.');
+    }
+  };
+
+  assertThrowingProxyDenied(
+    new Proxy(validSibling, {
+      getPrototypeOf: function () {
+        throw new Error('PRIVATE_PROXY_GET_PROTOTYPE');
+      }
+    }),
+    'PRIVATE_PROXY_GET_PROTOTYPE',
+    false
+  );
+
+  const proxyConditionTarget = {
+    path: 'context.companyId',
+    operator: 'EQ',
+    value: 'EMPRESA_001'
+  };
+
+  assertThrowingProxyDenied(
+    new Proxy(proxyConditionTarget, {
+      getOwnPropertyDescriptor: function () {
+        throw new Error('PRIVATE_PROXY_DESCRIPTOR');
+      }
+    }),
+    'PRIVATE_PROXY_DESCRIPTOR',
+    true
+  );
+
+  assertThrowingProxyDenied(
+    new Proxy(proxyConditionTarget, {
+      ownKeys: function () {
+        throw new Error('PRIVATE_PROXY_ENUMERATION');
+      }
+    }),
+    'PRIVATE_PROXY_ENUMERATION',
+    true
+  );
+
+  const emergencyResult = testAuthorizationEmergencyDeny();
+
+  if (emergencyResult.decision !== AERP_AUTHORIZATION_DECISION.DENY) {
+    throw new Error('DT-SEC-03 emergency DENY must remain intact.');
+  }
+
+  console.log('AERP-036 Strict Condition Validation Test: OK');
+
+  return {
+    ok: true,
+    status: 'STRICT_CONDITION_VALIDATION_OK',
+    testedOperators: operatorCases.length,
+    testedInvalidConditions: invalidConditions.length
+  };
 }
