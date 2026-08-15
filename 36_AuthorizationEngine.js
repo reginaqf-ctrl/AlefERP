@@ -47,7 +47,13 @@ const AERP_AUTHORIZATION_REASON = Object.freeze({
   DENIED_BY_RULE: 'DENIED_BY_RULE',
   NO_MATCHING_RULE: 'NO_MATCHING_RULE',
   INVALID_REQUEST: 'INVALID_REQUEST',
+  INVALID_AUTHORIZATION_OPTIONS: 'INVALID_AUTHORIZATION_OPTIONS',
   ENGINE_ERROR: 'ENGINE_ERROR'
+});
+
+const AERP_AUTHORIZATION_PUBLIC_ERROR = Object.freeze({
+  INVALID_AUTHORIZATION_OPTIONS: 'Authorization options are invalid.',
+  ENGINE_ERROR: 'Authorization evaluation failed.'
 });
 
 const AERP_AUTHORIZATION_DEFAULTS = Object.freeze({
@@ -105,13 +111,32 @@ const AERP_AUTHORIZATION_DECISION_REASON_CODE = Object.freeze({
  */
 function aerpAuthorize(request, options) {
   const startedAt = new Date();
-
-  const executionOptions = aerpBuildAuthorizationOptions_(options);
-
+  let executionOptions = null;
   let normalizedRequest = null;
   let trace = null;
 
   try {
+    executionOptions = aerpBuildAuthorizationOptions_(options);
+
+    if (!executionOptions.valid) {
+      trace = aerpCreateAuthorizationTrace_(null, executionOptions);
+
+      aerpAddAuthorizationTraceStep_(trace, 'VALIDATE_OPTIONS', AERP_AUTHORIZATION_DECISION.DENY, {
+        reason: AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_OPTIONS
+      });
+
+      return aerpBuildAuthorizationDecision_({
+        decision: AERP_AUTHORIZATION_DECISION.DENY,
+        reason: AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_OPTIONS,
+        reasonCode: AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_OPTIONS,
+        request: null,
+        matchedRule: null,
+        validationErrors: [AERP_AUTHORIZATION_PUBLIC_ERROR.INVALID_AUTHORIZATION_OPTIONS],
+        trace: trace,
+        startedAt: startedAt
+      });
+    }
+
     normalizedRequest = aerpBuildAuthorizationRequest_(request);
 
     trace = aerpCreateAuthorizationTrace_(normalizedRequest, executionOptions);
@@ -201,12 +226,12 @@ function aerpAuthorize(request, options) {
       });
     }
 
-    aerpAddAuthorizationTraceStep_(trace, 'DEFAULT_DECISION', executionOptions.defaultDecision, {
+    aerpAddAuthorizationTraceStep_(trace, 'DEFAULT_DECISION', AERP_AUTHORIZATION_DECISION.DENY, {
       reason: AERP_AUTHORIZATION_REASON.NO_MATCHING_RULE
     });
 
     return aerpBuildAuthorizationDecision_({
-      decision: executionOptions.defaultDecision,
+      decision: AERP_AUTHORIZATION_DECISION.DENY,
 
       reason: AERP_AUTHORIZATION_REASON.NO_MATCHING_RULE,
 
@@ -222,11 +247,14 @@ function aerpAuthorize(request, options) {
     });
   } catch (error) {
     if (!trace) {
-      trace = aerpCreateAuthorizationTrace_(normalizedRequest, executionOptions);
+      trace = aerpCreateAuthorizationTrace_(
+        normalizedRequest,
+        aerpBuildSafeAuthorizationOptions_()
+      );
     }
 
     aerpAddAuthorizationTraceStep_(trace, 'ENGINE_ERROR', AERP_AUTHORIZATION_DECISION.DENY, {
-      message: error && error.message ? error.message : String(error)
+      message: AERP_AUTHORIZATION_PUBLIC_ERROR.ENGINE_ERROR
     });
 
     return aerpBuildAuthorizationDecision_({
@@ -237,7 +265,10 @@ function aerpAuthorize(request, options) {
       validationErrors: [],
       trace: trace,
       startedAt: startedAt,
-      error: error
+      error: {
+        name: 'AuthorizationEngineError',
+        message: AERP_AUTHORIZATION_PUBLIC_ERROR.ENGINE_ERROR
+      }
     });
   }
 }
@@ -389,6 +420,8 @@ function aerpBuildAuthorizationDecision_(input) {
     decision: decision,
 
     reason: source.reason || AERP_AUTHORIZATION_REASON.NO_MATCHING_RULE,
+
+    reasonCode: source.reasonCode || null,
 
     requestId: source.request && source.request.requestId ? source.request.requestId : null,
 
@@ -1777,11 +1810,15 @@ function aerpAuthorizationStringEndsWith_(actualValue, expectedValue, caseSensit
 function aerpBuildAuthorizationOptions_(options) {
   const source = options && typeof options === 'object' ? options : {};
 
+  const hasDefaultDecision = Object.prototype.hasOwnProperty.call(source, 'defaultDecision');
+
+  const defaultDecisionIsValid =
+    !hasDefaultDecision || source.defaultDecision === AERP_AUTHORIZATION_DECISION.DENY;
+
   return {
-    defaultDecision:
-      source.defaultDecision === AERP_AUTHORIZATION_DECISION.ALLOW
-        ? AERP_AUTHORIZATION_DECISION.ALLOW
-        : AERP_AUTHORIZATION_DEFAULTS.defaultDecision,
+    valid: defaultDecisionIsValid,
+
+    defaultDecision: AERP_AUTHORIZATION_DECISION.DENY,
 
     traceEnabled: source.traceEnabled !== false,
 
@@ -1789,6 +1826,22 @@ function aerpBuildAuthorizationOptions_(options) {
 
     rules: Array.isArray(source.rules) ? source.rules : [],
     decisionPolicy: aerpBuildAuthorizationDecisionPolicy_(source.decisionPolicy)
+  };
+}
+
+/**
+ * Construye opciones internas seguras sin consultar datos del llamador.
+ *
+ * @return {Object}
+ */
+function aerpBuildSafeAuthorizationOptions_() {
+  return {
+    valid: true,
+    defaultDecision: AERP_AUTHORIZATION_DECISION.DENY,
+    traceEnabled: AERP_AUTHORIZATION_DEFAULTS.traceEnabled,
+    stopOnFirstMatch: AERP_AUTHORIZATION_DEFAULTS.stopOnFirstMatch,
+    rules: [],
+    decisionPolicy: aerpBuildAuthorizationDecisionPolicy_()
   };
 }
 
@@ -2872,4 +2925,175 @@ function testAuthorizationAdvancedDecisionBuilder() {
   console.log('AERP-036 Advanced Decision Builder Test: OK');
 
   return result;
+}
+
+/**
+ * Comprueba que el DENY predeterminado sea inmutable y que una regla ALLOW
+ * explícita y válida siga autorizando.
+ */
+function testAuthorizationImmutableDefaultDeny() {
+  const request = {
+    subject: {
+      id: 'vendedor@empresa.com',
+      type: 'USER',
+      roles: ['VENDEDOR']
+    },
+    action: 'EDIT',
+    resource: {
+      type: 'TABLE',
+      id: 'PEDIDOS'
+    },
+    context: {
+      companyId: 'EMPRESA_001'
+    }
+  };
+
+  const allowRule = {
+    id: 'RULE_IMMUTABLE_DEFAULT_ALLOW',
+    enabled: true,
+    effect: AERP_AUTHORIZATION_DECISION.ALLOW,
+    priority: 100,
+    subjectTypes: ['USER'],
+    roles: ['VENDEDOR'],
+    actions: ['EDIT'],
+    resourceTypes: ['TABLE'],
+    resourceIds: ['PEDIDOS']
+  };
+
+  const acceptedCases = [
+    {
+      name: 'omitted defaultDecision',
+      options: {}
+    },
+    {
+      name: 'exact DENY',
+      options: {
+        defaultDecision: AERP_AUTHORIZATION_DECISION.DENY
+      }
+    }
+  ];
+
+  acceptedCases.forEach(function (testCase) {
+    const result = aerpAuthorize(request, testCase.options);
+
+    if (
+      result.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+      result.allowed ||
+      result.reason !== AERP_AUTHORIZATION_REASON.NO_MATCHING_RULE
+    ) {
+      throw new Error(testCase.name + ' must preserve the immutable DENY fallback.');
+    }
+  });
+
+  const invalidCases = [
+    {
+      name: 'explicit ALLOW',
+      value: AERP_AUTHORIZATION_DECISION.ALLOW
+    },
+    {
+      name: 'unknown string',
+      value: 'UNKNOWN'
+    },
+    {
+      name: 'empty string',
+      value: ''
+    },
+    {
+      name: 'null',
+      value: null
+    },
+    {
+      name: 'number',
+      value: 1
+    },
+    {
+      name: 'array',
+      value: []
+    },
+    {
+      name: 'object',
+      value: {}
+    }
+  ];
+
+  invalidCases.forEach(function (testCase) {
+    const result = aerpAuthorize(request, {
+      defaultDecision: testCase.value,
+      debug: true,
+      traceEnabled: true
+    });
+
+    if (
+      result.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+      result.allowed ||
+      result.reason !== AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_OPTIONS ||
+      result.reasonCode !== AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_OPTIONS
+    ) {
+      throw new Error(testCase.name + ' must fail closed as INVALID_AUTHORIZATION_OPTIONS.');
+    }
+
+    const serializedResult = JSON.stringify(result);
+
+    if (serializedResult.indexOf('UNKNOWN') !== -1) {
+      throw new Error('Unsafe defaultDecision values must not be exposed.');
+    }
+  });
+
+  const throwingOptions = {};
+
+  Object.defineProperty(throwingOptions, 'defaultDecision', {
+    get: function () {
+      throw new Error('UNTRUSTED_DEFAULT_DECISION_DETAIL');
+    }
+  });
+
+  const throwingResult = aerpAuthorize(request, throwingOptions);
+
+  if (
+    throwingResult.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+    throwingResult.allowed ||
+    throwingResult.reason !== AERP_AUTHORIZATION_REASON.ENGINE_ERROR ||
+    JSON.stringify(throwingResult).indexOf('UNTRUSTED_DEFAULT_DECISION_DETAIL') !== -1
+  ) {
+    throw new Error('A throwing defaultDecision getter must return a sanitized DENY.');
+  }
+
+  const allowResult = aerpAuthorize(request, {
+    defaultDecision: AERP_AUTHORIZATION_DECISION.DENY,
+    rules: [allowRule],
+    traceEnabled: true
+  });
+
+  if (
+    allowResult.decision !== AERP_AUTHORIZATION_DECISION.ALLOW ||
+    !allowResult.allowed ||
+    allowResult.reason !== AERP_AUTHORIZATION_REASON.ALLOWED_BY_RULE
+  ) {
+    throw new Error('A valid applicable ALLOW rule must still authorize.');
+  }
+
+  const noMatchResult = aerpAuthorize(
+    Object.assign({}, request, {
+      action: 'DELETE'
+    }),
+    {
+      rules: [allowRule]
+    }
+  );
+
+  if (
+    noMatchResult.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+    noMatchResult.allowed ||
+    noMatchResult.reason !== AERP_AUTHORIZATION_REASON.NO_MATCHING_RULE
+  ) {
+    throw new Error('No matching rules must preserve the immutable DENY fallback.');
+  }
+
+  console.log('AERP-036 Immutable Default Deny Test: OK');
+
+  return {
+    ok: true,
+    status: 'IMMUTABLE_DEFAULT_DENY_OK',
+    testedInvalidDefaults: invalidCases.length
+  };
 }
