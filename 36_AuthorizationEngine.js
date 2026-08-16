@@ -80,7 +80,7 @@ const AERP_AUTHORIZATION_DECISION_POLICY_DEFAULTS = Object.freeze({
 
   conflictStrategy: 'DENY_PRECEDENCE',
 
-  tieBreaker: 'FIRST_DECLARED',
+  tieBreaker: 'STABLE_RULE_KEY',
 
   requireExplanation: true,
 
@@ -92,6 +92,8 @@ const AERP_AUTHORIZATION_DECISION_POLICY_DEFAULTS = Object.freeze({
  */
 const AERP_AUTHORIZATION_DECISION_REASON_CODE = Object.freeze({
   HIGHEST_PRIORITY: 'HIGHEST_PRIORITY',
+
+  GLOBAL_DENY_PRECEDENCE: 'GLOBAL_DENY_PRECEDENCE',
 
   DENY_PRECEDENCE: 'DENY_PRECEDENCE',
 
@@ -218,6 +220,20 @@ function aerpAuthorize(request, options) {
       executionOptions.decisionPolicy
     );
 
+    if (
+      advancedDecision.matched &&
+      advancedDecision.decision === AERP_AUTHORIZATION_DECISION.DENY
+    ) {
+      aerpAddAuthorizationTraceStep_(
+        trace,
+        'GLOBAL_DENY_PRECEDENCE',
+        AERP_AUTHORIZATION_DECISION.DENY,
+        {
+          reasonCode: AERP_AUTHORIZATION_DECISION_REASON_CODE.GLOBAL_DENY_PRECEDENCE
+        }
+      );
+    }
+
     aerpAddAuthorizationTraceStep_(
       trace,
       'BUILD_DECISION',
@@ -241,6 +257,8 @@ function aerpAuthorize(request, options) {
         decision: advancedDecision.decision,
 
         reason: advancedDecision.reason,
+
+        reasonCode: advancedDecision.reasonCode,
 
         request: normalizedRequest,
 
@@ -641,6 +659,10 @@ function aerpEvaluateAuthorizationRules_(request, rules, _options) {
 
     const match = aerpDoesAuthorizationRuleMatch_(rule, request);
 
+    if (match.evaluationError === true) {
+      throw new Error('AUTHORIZATION_CONDITION_EVALUATION_ERROR');
+    }
+
     if (!match.ok) {
       continue;
     }
@@ -663,6 +685,8 @@ function aerpEvaluateAuthorizationRules_(request, rules, _options) {
       decision: null,
 
       reason: AERP_AUTHORIZATION_REASON.NO_MATCHING_RULE,
+
+      reasonCode: AERP_AUTHORIZATION_DECISION_REASON_CODE.NO_MATCHING_RULE,
 
       matchedRule: null,
 
@@ -708,7 +732,7 @@ function aerpEvaluateAuthorizationRules_(request, rules, _options) {
 
     matchingRules: matchingRules.map(function (candidate) {
       return {
-        rule: aerpBuildPublicAuthorizationRule_(candidate.rule),
+        rule: candidate.rule,
 
         evaluationOrder: candidate.evaluationOrder,
 
@@ -754,9 +778,9 @@ function aerpNormalizeAuthorizationRules_(rules) {
    * cualquier fallo durante su inspección invalida la colección y termina en
    * DENY sin propagar detalles del trap.
    */
-  if (!Array.isArray(rules)) {
+  if (!Array.isArray(rules) || Object.getPrototypeOf(rules) !== Array.prototype) {
     return {
-      ok: true,
+      ok: false,
       rules: []
     };
   }
@@ -764,8 +788,29 @@ function aerpNormalizeAuthorizationRules_(rules) {
   const normalizedRules = [];
 
   try {
+    const descriptors = Object.getOwnPropertyDescriptors(rules);
+    const keys = Object.keys(descriptors).filter(function (key) {
+      return key !== 'length';
+    });
+
+    if (
+      keys.length !== rules.length ||
+      Object.getOwnPropertySymbols(rules).length > 0 ||
+      keys.some(function (key) {
+        return !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= rules.length;
+      }) ||
+      keys.some(function (key) {
+        return descriptors[key].get || descriptors[key].set;
+      })
+    ) {
+      return {
+        ok: false,
+        rules: []
+      };
+    }
+
     for (let index = 0; index < rules.length; index += 1) {
-      const ruleResult = aerpNormalizeAuthorizationRule_(rules[index], index);
+      const ruleResult = aerpNormalizeAuthorizationRule_(descriptors[String(index)].value, index);
 
       if (!ruleResult.ok) {
         return {
@@ -774,9 +819,7 @@ function aerpNormalizeAuthorizationRules_(rules) {
         };
       }
 
-      if (ruleResult.rule) {
-        normalizedRules.push(ruleResult.rule);
-      }
+      normalizedRules.push(ruleResult.rule);
     }
   } catch {
     return {
@@ -801,7 +844,7 @@ function aerpNormalizeAuthorizationRules_(rules) {
 function aerpNormalizeAuthorizationRule_(rule, index) {
   if (!rule || typeof rule !== 'object') {
     return {
-      ok: true,
+      ok: false,
       rule: null
     };
   }
@@ -813,18 +856,65 @@ function aerpNormalizeAuthorizationRule_(rule, index) {
     };
   }
 
-  const effect = aerpNormalizeAuthorizationString_(rule.effect).toUpperCase();
+  const descriptors = Object.getOwnPropertyDescriptors(rule);
+  const consumedFields = [
+    'id',
+    'name',
+    'description',
+    'enabled',
+    'effect',
+    'priority',
+    'subjectTypes',
+    'subjectType',
+    'subjectIds',
+    'subjectId',
+    'roles',
+    'role',
+    'actions',
+    'action',
+    'resourceTypes',
+    'resourceType',
+    'resourceIds',
+    'resourceId',
+    'resource',
+    'conditions',
+    'metadata'
+  ];
 
-  if (effect !== AERP_AUTHORIZATION_DECISION.ALLOW && effect !== AERP_AUTHORIZATION_DECISION.DENY) {
+  if (
+    consumedFields.some(function (field) {
+      const descriptor = descriptors[field];
+
+      return descriptor && (descriptor.get || descriptor.set);
+    })
+  ) {
     return {
-      ok: true,
+      ok: false,
       rule: null
     };
   }
 
-  const priorityNumber = Number(rule.priority);
+  const readField = function (field) {
+    return descriptors[field] ? descriptors[field].value : undefined;
+  };
 
-  const conditionProperty = Object.getOwnPropertyDescriptor(rule, 'conditions');
+  const effect = readField('effect');
+
+  if (
+    typeof effect !== 'string' ||
+    (effect !== AERP_AUTHORIZATION_DECISION.ALLOW && effect !== AERP_AUTHORIZATION_DECISION.DENY)
+  ) {
+    return {
+      ok: false,
+      rule: null
+    };
+  }
+
+  const priorityNumber = Number(readField('priority'));
+
+  const stableRuleId = aerpNormalizeAuthorizationString_(readField('id'));
+
+  const conditionProperty = descriptors.conditions;
 
   const conditionResult = conditionProperty
     ? conditionProperty.get || conditionProperty.set
@@ -845,7 +935,7 @@ function aerpNormalizeAuthorizationRule_(rule, index) {
     };
   }
 
-  const metadataProperty = Object.getOwnPropertyDescriptor(rule, 'metadata');
+  const metadataProperty = descriptors.metadata;
 
   const metadataResult = metadataProperty
     ? metadataProperty.get || metadataProperty.set
@@ -872,30 +962,38 @@ function aerpNormalizeAuthorizationRule_(rule, index) {
   return {
     ok: true,
     rule: {
-      id: aerpNormalizeAuthorizationString_(rule.id) || 'AUTH_RULE_' + String(index + 1),
+      id: stableRuleId || 'AUTH_RULE_' + String(index + 1),
 
-      name: aerpNormalizeAuthorizationString_(rule.name),
+      stableId: stableRuleId,
 
-      description: aerpNormalizeAuthorizationString_(rule.description),
+      name: aerpNormalizeAuthorizationString_(readField('name')),
 
-      enabled: rule.enabled !== false,
+      description: aerpNormalizeAuthorizationString_(readField('description')),
+
+      enabled: readField('enabled') !== false,
 
       effect: effect,
 
       priority: Number.isFinite(priorityNumber) ? priorityNumber : 0,
 
-      subjectTypes: aerpNormalizeAuthorizationRuleValues_(rule.subjectTypes || rule.subjectType),
+      subjectTypes: aerpNormalizeAuthorizationRuleValues_(
+        readField('subjectTypes') || readField('subjectType')
+      ),
 
-      subjectIds: aerpNormalizeAuthorizationRuleValues_(rule.subjectIds || rule.subjectId),
+      subjectIds: aerpNormalizeAuthorizationRuleValues_(
+        readField('subjectIds') || readField('subjectId')
+      ),
 
-      roles: aerpNormalizeAuthorizationRuleValues_(rule.roles || rule.role),
+      roles: aerpNormalizeAuthorizationRuleValues_(readField('roles') || readField('role')),
 
-      actions: aerpNormalizeAuthorizationRuleValues_(rule.actions || rule.action),
+      actions: aerpNormalizeAuthorizationRuleValues_(readField('actions') || readField('action')),
 
-      resourceTypes: aerpNormalizeAuthorizationRuleValues_(rule.resourceTypes || rule.resourceType),
+      resourceTypes: aerpNormalizeAuthorizationRuleValues_(
+        readField('resourceTypes') || readField('resourceType')
+      ),
 
       resourceIds: aerpNormalizeAuthorizationRuleValues_(
-        rule.resourceIds || rule.resourceId || rule.resource
+        readField('resourceIds') || readField('resourceId') || readField('resource')
       ),
 
       conditions: conditionResult.conditions,
@@ -1039,6 +1137,8 @@ function aerpDoesAuthorizationRuleMatch_(rule, request) {
   return {
     ok: structuralMatch && conditionEvaluation.ok,
 
+    evaluationError: conditionEvaluation.evaluationError === true,
+
     checks: checks,
 
     conditionEvaluation: conditionEvaluation
@@ -1106,7 +1206,78 @@ function aerpAuthorizationRolesMatch_(subjectRoles, ruleRoles) {
  * @return {Object} Regla ganadora.
  */
 function aerpSelectWinningAuthorizationRule_(matchingRules) {
-  return matchingRules.slice().sort(aerpCompareAuthorizationRules_)[0];
+  const denyRules = matchingRules.filter(function (rule) {
+    return rule.effect === AERP_AUTHORIZATION_DECISION.DENY;
+  });
+
+  const candidates = denyRules.length > 0 ? denyRules : matchingRules;
+
+  return candidates.slice().sort(aerpCompareMatchingAuthorizationRules_)[0];
+}
+
+/**
+ * Ordena reglas del mismo efecto sin depender del orden de entrada.
+ *
+ * @param {Object} first Primera regla.
+ * @param {Object} second Segunda regla.
+ * @return {number}
+ */
+function aerpCompareMatchingAuthorizationRules_(first, second) {
+  if (first.priority !== second.priority) {
+    return second.priority - first.priority;
+  }
+
+  const firstKey = aerpBuildAuthorizationRuleTieKey_(first);
+  const secondKey = aerpBuildAuthorizationRuleTieKey_(second);
+
+  if (firstKey < secondKey) {
+    return -1;
+  }
+
+  if (firstKey > secondKey) {
+    return 1;
+  }
+
+  return 0;
+}
+
+/**
+ * Construye una clave estable usando ID seguro cuando existe y, como respaldo,
+ * el contenido declarativo que participa en autorización.
+ *
+ * @param {Object} rule Regla normalizada.
+ * @return {string}
+ */
+function aerpBuildAuthorizationRuleTieKey_(rule) {
+  const stableId = aerpNormalizeAuthorizationString_(rule.stableId);
+
+  const securityShape = {
+    effect: rule.effect,
+    subjectTypes: rule.subjectTypes.slice().sort(),
+    subjectIds: rule.subjectIds.slice().sort(),
+    roles: rule.roles.slice().sort(),
+    actions: rule.actions.slice().sort(),
+    resourceTypes: rule.resourceTypes.slice().sort(),
+    resourceIds: rule.resourceIds.slice().sort(),
+    conditions: rule.conditions
+      .map(function (condition) {
+        return {
+          enabled: condition.enabled,
+          path: condition.path,
+          operator: condition.operator,
+          value: condition.value,
+          caseSensitive: condition.caseSensitive
+        };
+      })
+      .sort(function (first, second) {
+        const firstCondition = JSON.stringify(first);
+        const secondCondition = JSON.stringify(second);
+
+        return firstCondition < secondCondition ? -1 : firstCondition > secondCondition ? 1 : 0;
+      })
+  };
+
+  return (stableId ? '0:' + stableId : '1:') + ':' + JSON.stringify(securityShape);
 }
 
 /**
@@ -1139,21 +1310,9 @@ function aerpBuildPublicAuthorizationRule_(rule) {
 
     resourceIds: rule.resourceIds.slice(),
 
-    conditions: rule.conditions.map(function (condition) {
-      return {
-        id: condition.id,
+    conditions: [],
 
-        path: condition.path,
-
-        operator: condition.operator,
-
-        value: condition.value,
-
-        caseSensitive: condition.caseSensitive
-      };
-    }),
-
-    metadata: rule.metadata
+    metadata: {}
   };
 }
 
@@ -1223,16 +1382,12 @@ function aerpBuildAdvancedAuthorizationDecision_(ruleEvaluation, policy) {
    * FASE 1
    * Seleccionar Ãºnicamente las reglas con mayor prioridad.
    */
-  const highestPriority = candidates.reduce(function (currentHighest, candidate) {
-    const priority = candidate && candidate.rule ? Number(candidate.rule.priority) : 0;
+  const denyCandidates = candidates.filter(function (candidate) {
+    return candidate.rule.effect === AERP_AUTHORIZATION_DECISION.DENY;
+  });
 
-    return Math.max(currentHighest, Number.isFinite(priority) ? priority : 0);
-  }, Number.NEGATIVE_INFINITY);
-
-  const priorityCandidates = candidates.filter(function (candidate) {
-    const priority = Number(candidate.rule.priority);
-
-    return priority === highestPriority;
+  const allowCandidates = candidates.filter(function (candidate) {
+    return candidate.rule.effect === AERP_AUTHORIZATION_DECISION.ALLOW;
   });
 
   /*
@@ -1242,17 +1397,7 @@ function aerpBuildAdvancedAuthorizationDecision_(ruleEvaluation, policy) {
    * PolÃ­tica inicial:
    * Ante igual prioridad, DENY tiene precedencia.
    */
-  let conflictCandidates = priorityCandidates.slice();
-
-  if (decisionPolicy.conflictStrategy === 'DENY_PRECEDENCE') {
-    const denyCandidates = priorityCandidates.filter(function (candidate) {
-      return candidate.rule.effect === AERP_AUTHORIZATION_DECISION.DENY;
-    });
-
-    if (denyCandidates.length > 0) {
-      conflictCandidates = denyCandidates;
-    }
-  }
+  const selectedCandidates = denyCandidates.length > 0 ? denyCandidates : allowCandidates;
 
   /*
    * FASE 3
@@ -1261,13 +1406,15 @@ function aerpBuildAdvancedAuthorizationDecision_(ruleEvaluation, policy) {
    * PolÃ­tica inicial:
    * Gana la primera regla declarada.
    */
-  conflictCandidates.sort(function (first, second) {
-    return Number(first.evaluationOrder) - Number(second.evaluationOrder);
+  selectedCandidates.sort(function (first, second) {
+    return aerpCompareMatchingAuthorizationRules_(first.rule, second.rule);
   });
 
-  const winner = conflictCandidates[0];
+  const winner = selectedCandidates[0];
 
   const winningRule = winner.rule;
+
+  const publicWinningRule = aerpBuildPublicAuthorizationRule_(winningRule);
 
   const decision =
     winningRule.effect === AERP_AUTHORIZATION_DECISION.ALLOW
@@ -1282,31 +1429,20 @@ function aerpBuildAdvancedAuthorizationDecision_(ruleEvaluation, policy) {
       return aerpExplainIgnoredAuthorizationRule_(candidate, winner);
     });
 
-  const reasoning = [];
+  const reasonCode =
+    decision === AERP_AUTHORIZATION_DECISION.DENY
+      ? AERP_AUTHORIZATION_DECISION_REASON_CODE.GLOBAL_DENY_PRECEDENCE
+      : AERP_AUTHORIZATION_DECISION_REASON_CODE.HIGHEST_PRIORITY;
 
-  reasoning.push({
-    code: AERP_AUTHORIZATION_DECISION_REASON_CODE.HIGHEST_PRIORITY,
-
-    message: 'Winning rule belongs to the highest priority group.',
-
-    priority: highestPriority
-  });
-
-  if (priorityCandidates.length > 1 && decision === AERP_AUTHORIZATION_DECISION.DENY) {
-    reasoning.push({
-      code: AERP_AUTHORIZATION_DECISION_REASON_CODE.DENY_PRECEDENCE,
-
-      message: 'DENY precedence was applied among rules with equal priority.'
-    });
-  }
-
-  if (conflictCandidates.length > 1) {
-    reasoning.push({
-      code: AERP_AUTHORIZATION_DECISION_REASON_CODE.FIRST_DECLARED,
-
-      message: 'FIRST_DECLARED tie breaker selected the winning rule.'
-    });
-  }
+  const reasoning = [
+    {
+      code: reasonCode,
+      message:
+        decision === AERP_AUTHORIZATION_DECISION.DENY
+          ? 'A matching DENY rule has immutable global precedence.'
+          : 'No matching DENY rule exists; a deterministic ALLOW rule was selected.'
+    }
+  ];
 
   return {
     matched: true,
@@ -1318,7 +1454,9 @@ function aerpBuildAdvancedAuthorizationDecision_(ruleEvaluation, policy) {
         ? AERP_AUTHORIZATION_REASON.ALLOWED_BY_RULE
         : AERP_AUTHORIZATION_REASON.DENIED_BY_RULE,
 
-    winningRule: winningRule,
+    reasonCode: reasonCode,
+
+    winningRule: publicWinningRule,
 
     ignoredRules: ignoredRules,
 
@@ -1326,7 +1464,7 @@ function aerpBuildAdvancedAuthorizationDecision_(ruleEvaluation, policy) {
 
     matchingRuleCount: candidates.length,
 
-    highestPriority: highestPriority,
+    highestPriority: winningRule.priority,
 
     policy: decisionPolicy,
 
@@ -1340,7 +1478,7 @@ function aerpBuildAdvancedAuthorizationDecision_(ruleEvaluation, policy) {
  * Actualmente se soporta:
  *   - HIGHEST_PRIORITY
  *   - DENY_PRECEDENCE
- *   - FIRST_DECLARED
+ *   - STABLE_RULE_KEY
  *
  * @param {Object=} policy PolÃ­tica recibida.
  * @return {Object} PolÃ­tica normalizada.
@@ -1359,10 +1497,9 @@ function aerpBuildAuthorizationDecisionPolicy_(policy) {
         ? 'DENY_PRECEDENCE'
         : AERP_AUTHORIZATION_DECISION_POLICY_DEFAULTS.conflictStrategy,
 
-    tieBreaker:
-      source.tieBreaker === 'FIRST_DECLARED'
-        ? 'FIRST_DECLARED'
-        : AERP_AUTHORIZATION_DECISION_POLICY_DEFAULTS.tieBreaker,
+    // Legacy tieBreaker input is intentionally ignored. The effective policy
+    // is fixed and cannot restore declaration-order authorization behavior.
+    tieBreaker: AERP_AUTHORIZATION_DECISION_POLICY_DEFAULTS.tieBreaker,
 
     requireExplanation: source.requireExplanation !== false,
 
@@ -1382,21 +1519,21 @@ function aerpExplainIgnoredAuthorizationRule_(candidate, winner) {
 
   const winningRule = winner.rule;
 
-  let reasonCode = AERP_AUTHORIZATION_DECISION_REASON_CODE.FIRST_DECLARED;
+  let reasonCode = AERP_AUTHORIZATION_DECISION_REASON_CODE.HIGHEST_PRIORITY;
 
-  let reason = 'Another rule won through the configured tie breaker.';
+  let reason = 'Another rule of the selected effect won through deterministic ordering.';
 
-  if (Number(candidateRule.priority) < Number(winningRule.priority)) {
-    reasonCode = AERP_AUTHORIZATION_DECISION_REASON_CODE.LOWER_PRIORITY;
-
-    reason = 'Rule was ignored because it has lower priority than the winning rule.';
-  } else if (
+  if (
     candidateRule.effect !== winningRule.effect &&
     winningRule.effect === AERP_AUTHORIZATION_DECISION.DENY
   ) {
-    reasonCode = AERP_AUTHORIZATION_DECISION_REASON_CODE.DENY_PRECEDENCE;
+    reasonCode = AERP_AUTHORIZATION_DECISION_REASON_CODE.GLOBAL_DENY_PRECEDENCE;
 
-    reason = 'Rule was ignored because DENY has precedence at equal priority.';
+    reason = 'Rule was ignored because a matching DENY has immutable global precedence.';
+  } else if (Number(candidateRule.priority) < Number(winningRule.priority)) {
+    reasonCode = AERP_AUTHORIZATION_DECISION_REASON_CODE.LOWER_PRIORITY;
+
+    reason = 'Rule was ignored because it has lower priority than the winning rule.';
   }
 
   return {
@@ -2094,8 +2231,14 @@ function aerpEvaluateAuthorizationConditions_(conditions, request) {
     return result.ok !== true;
   });
 
+  const evaluationError = failedResults.some(function (result) {
+    return result.errorCode === AERP_AUTHORIZATION_CONDITION_REASON_CODE.CONDITION_EVALUATION_ERROR;
+  });
+
   return {
     ok: failedResults.length === 0,
+
+    evaluationError: evaluationError,
 
     evaluatedConditionCount: results.length,
 
@@ -2567,8 +2710,10 @@ function aerpBuildAuthorizationOptions_(options) {
   const defaultDecisionIsValid =
     !hasDefaultDecision || source.defaultDecision === AERP_AUTHORIZATION_DECISION.DENY;
 
+  const decisionPolicyResult = aerpValidateAuthorizationDecisionPolicyOption_(source);
+
   return {
-    valid: defaultDecisionIsValid,
+    valid: defaultDecisionIsValid && decisionPolicyResult.ok,
 
     defaultDecision: AERP_AUTHORIZATION_DECISION.DENY,
 
@@ -2577,7 +2722,52 @@ function aerpBuildAuthorizationOptions_(options) {
     stopOnFirstMatch: source.stopOnFirstMatch !== false,
 
     rules: Array.isArray(source.rules) ? source.rules : [],
-    decisionPolicy: aerpBuildAuthorizationDecisionPolicy_(source.decisionPolicy)
+    decisionPolicy: decisionPolicyResult.policy
+  };
+}
+
+/**
+ * Valida que ninguna opción pueda debilitar la precedencia DENY global.
+ *
+ * @param {Object} options Opciones recibidas.
+ * @return {{ok: boolean, policy: Object}}
+ */
+function aerpValidateAuthorizationDecisionPolicyOption_(options) {
+  const hasPolicy = Object.prototype.hasOwnProperty.call(options, 'decisionPolicy');
+
+  if (!hasPolicy || options.decisionPolicy === undefined) {
+    return {
+      ok: true,
+      policy: aerpBuildAuthorizationDecisionPolicy_()
+    };
+  }
+
+  const policy = options.decisionPolicy;
+
+  if (!aerpIsPlainAuthorizationObject_(policy)) {
+    return {
+      ok: false,
+      policy: aerpBuildAuthorizationDecisionPolicy_()
+    };
+  }
+
+  const conflictProperty = Object.getOwnPropertyDescriptor(policy, 'conflictStrategy');
+
+  if (
+    conflictProperty &&
+    (conflictProperty.get ||
+      conflictProperty.set ||
+      conflictProperty.value !== AERP_AUTHORIZATION_DECISION_POLICY_DEFAULTS.conflictStrategy)
+  ) {
+    return {
+      ok: false,
+      policy: aerpBuildAuthorizationDecisionPolicy_()
+    };
+  }
+
+  return {
+    ok: true,
+    policy: aerpBuildAuthorizationDecisionPolicy_(policy)
   };
 }
 
@@ -3238,8 +3428,8 @@ function testAuthorizationRuleEvaluatorDenyOverride() {
       throw new Error('Expected ALLOW for EXISTS, IN and CONTAINS.');
     }
 
-    if (!result.matchedRule || result.matchedRule.conditions.length !== 3) {
-      throw new Error('Expected three public conditions.');
+    if (!result.matchedRule || result.matchedRule.conditions.length !== 0) {
+      throw new Error('Public matched rules must not expose conditions.');
     }
 
     console.log('AERP-036 Condition Evaluator Operators Test: OK');
@@ -3543,8 +3733,8 @@ function testAuthorizationConditionEvaluatorOperators() {
     throw new Error('Expected ALLOW for EXISTS, IN and CONTAINS.');
   }
 
-  if (!result.matchedRule || result.matchedRule.conditions.length !== 3) {
-    throw new Error('Expected three public conditions.');
+  if (!result.matchedRule || result.matchedRule.conditions.length !== 0) {
+    throw new Error('Public matched rules must not expose conditions.');
   }
 
   console.log('AERP-036 Condition Evaluator Operators Test: OK');
@@ -4631,5 +4821,416 @@ function testAuthorizationStrictConditionValidation() {
     status: 'STRICT_CONDITION_VALIDATION_OK',
     testedOperators: operatorCases.length,
     testedInvalidConditions: invalidConditions.length
+  };
+}
+
+/**
+ * Comprueba la precedencia global e inmutable de cualquier DENY coincidente.
+ */
+function testAuthorizationGlobalDenyPrecedence() {
+  const request = {
+    subject: {
+      id: 'global.deny@empresa.com',
+      type: 'USER',
+      roles: ['GLOBAL_TEST', 'SPECIFIC_ROLE']
+    },
+    action: 'EDIT',
+    resource: {
+      type: 'TABLE',
+      id: 'PEDIDOS',
+      attributes: {
+        status: 'BLOCKED'
+      }
+    },
+    context: {
+      companyId: 'EMPRESA_001',
+      privateMarker: 'PRIVATE_CONDITION_VALUE'
+    }
+  };
+
+  const buildRule = function (id, effect, priority, overrides) {
+    return Object.assign(
+      {
+        id: id,
+        enabled: true,
+        effect: effect,
+        priority: priority,
+        roles: ['GLOBAL_TEST'],
+        actions: ['EDIT'],
+        resourceTypes: ['TABLE'],
+        resourceIds: ['PEDIDOS'],
+        conditions: []
+      },
+      overrides || {}
+    );
+  };
+
+  const allowHigh = buildRule('RULE_ALLOW_HIGH', AERP_AUTHORIZATION_DECISION.ALLOW, 1000);
+  const denyLow = buildRule('RULE_DENY_LOW', AERP_AUTHORIZATION_DECISION.DENY, 1);
+
+  const assertInvalidRuleCollection = function (rules, forbiddenTexts, message) {
+    const result = aerpAuthorize(request, {
+      rules: rules,
+      traceEnabled: true
+    });
+    const serializedResult = JSON.stringify(result);
+
+    if (
+      result.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+      result.allowed !== false ||
+      result.reason !== AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_RULES ||
+      result.matchedRule !== null ||
+      result.decisionSummary !== null ||
+      serializedResult.indexOf('"decision":"ALLOW"') !== -1 ||
+      serializedResult.indexOf('"allowed":true') !== -1
+    ) {
+      throw new Error(message);
+    }
+
+    (forbiddenTexts || []).forEach(function (forbiddenText) {
+      if (serializedResult.indexOf(forbiddenText) !== -1) {
+        throw new Error('Invalid rule details must remain sanitized.');
+      }
+    });
+
+    return result;
+  };
+
+  const assertGlobalDeny = function (rules, expectedRuleId, message) {
+    const result = aerpAuthorize(request, {
+      rules: rules,
+      traceEnabled: true,
+      stopOnFirstMatch: true,
+      decisionPolicy: {
+        conflictStrategy: 'DENY_PRECEDENCE'
+      }
+    });
+
+    if (
+      result.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+      result.allowed ||
+      result.reason !== AERP_AUTHORIZATION_REASON.DENIED_BY_RULE ||
+      result.reasonCode !== AERP_AUTHORIZATION_DECISION_REASON_CODE.GLOBAL_DENY_PRECEDENCE ||
+      !result.matchedRule ||
+      result.matchedRule.id !== expectedRuleId
+    ) {
+      throw new Error(message);
+    }
+
+    return result;
+  };
+
+  const firstGlobalDenyResult = assertGlobalDeny(
+    [allowHigh, denyLow],
+    'RULE_DENY_LOW',
+    'A trailing lower-priority DENY must defeat ALLOW.'
+  );
+
+  if (
+    !firstGlobalDenyResult.decisionSummary ||
+    firstGlobalDenyResult.decisionSummary.policy.tieBreaker !== 'STABLE_RULE_KEY' ||
+    firstGlobalDenyResult.decisionSummary.policy.tieBreaker === 'FIRST_DECLARED'
+  ) {
+    throw new Error('Public diagnostics must report the fixed stable-key tie breaker.');
+  }
+  assertGlobalDeny([denyLow, allowHigh], 'RULE_DENY_LOW', 'A leading DENY must defeat ALLOW.');
+
+  const denyHigh = buildRule('RULE_DENY_HIGH', AERP_AUTHORIZATION_DECISION.DENY, 500);
+  const denyTieA = buildRule('RULE_DENY_A', AERP_AUTHORIZATION_DECISION.DENY, 200);
+  const denyTieB = buildRule('RULE_DENY_B', AERP_AUTHORIZATION_DECISION.DENY, 200);
+
+  assertGlobalDeny(
+    [denyTieB, allowHigh, denyTieA, denyHigh],
+    'RULE_DENY_HIGH',
+    'Priority must select only among matching DENY rules.'
+  );
+  assertGlobalDeny(
+    [denyTieB, denyTieA],
+    'RULE_DENY_A',
+    'Stable ID must resolve equal-priority DENY rules.'
+  );
+
+  const permutationRules = [allowHigh, denyTieB, denyTieA];
+  const permutations = [
+    [permutationRules[0], permutationRules[1], permutationRules[2]],
+    [permutationRules[0], permutationRules[2], permutationRules[1]],
+    [permutationRules[1], permutationRules[0], permutationRules[2]],
+    [permutationRules[1], permutationRules[2], permutationRules[0]],
+    [permutationRules[2], permutationRules[0], permutationRules[1]],
+    [permutationRules[2], permutationRules[1], permutationRules[0]]
+  ];
+
+  permutations.forEach(function (rules) {
+    assertGlobalDeny(
+      rules,
+      'RULE_DENY_A',
+      'Rule permutations must preserve decision and deterministic winner.'
+    );
+  });
+
+  const disabledDenyResult = aerpAuthorize(request, {
+    rules: [
+      allowHigh,
+      buildRule('RULE_DENY_DISABLED', AERP_AUTHORIZATION_DECISION.DENY, 2000, {
+        enabled: false
+      })
+    ]
+  });
+
+  if (disabledDenyResult.decision !== AERP_AUTHORIZATION_DECISION.ALLOW) {
+    throw new Error('A disabled DENY must not participate.');
+  }
+
+  const nonApplicableDenyResult = aerpAuthorize(request, {
+    rules: [
+      allowHigh,
+      buildRule('RULE_DENY_DELETE', AERP_AUTHORIZATION_DECISION.DENY, 2000, {
+        actions: ['DELETE']
+      })
+    ]
+  });
+
+  if (nonApplicableDenyResult.decision !== AERP_AUTHORIZATION_DECISION.ALLOW) {
+    throw new Error('A non-applicable DENY must not participate.');
+  }
+
+  const falseConditionDenyResult = aerpAuthorize(request, {
+    rules: [
+      allowHigh,
+      buildRule('RULE_DENY_FALSE_CONDITION', AERP_AUTHORIZATION_DECISION.DENY, 2000, {
+        conditions: [
+          {
+            path: 'resource.attributes.status',
+            operator: 'EQ',
+            value: 'OPEN'
+          }
+        ]
+      })
+    ]
+  });
+
+  if (falseConditionDenyResult.decision !== AERP_AUTHORIZATION_DECISION.ALLOW) {
+    throw new Error('A DENY with a valid false condition must not match.');
+  }
+
+  const trueConditionDeny = buildRule(
+    'RULE_DENY_TRUE_CONDITION',
+    AERP_AUTHORIZATION_DECISION.DENY,
+    2,
+    {
+      conditions: [
+        {
+          path: 'resource.attributes.status',
+          operator: 'EQ',
+          value: 'BLOCKED'
+        }
+      ]
+    }
+  );
+  assertGlobalDeny(
+    [allowHigh, trueConditionDeny],
+    'RULE_DENY_TRUE_CONDITION',
+    'A DENY with a true condition must have global precedence.'
+  );
+
+  const onlyAllowResult = aerpAuthorize(request, {
+    rules: [allowHigh]
+  });
+
+  if (onlyAllowResult.decision !== AERP_AUTHORIZATION_DECISION.ALLOW || !onlyAllowResult.allowed) {
+    throw new Error('A matching ALLOW must succeed when no DENY matches.');
+  }
+
+  const noMatchResult = aerpAuthorize(request, {
+    rules: [
+      buildRule('RULE_ALLOW_DELETE', AERP_AUTHORIZATION_DECISION.ALLOW, 100, {
+        actions: ['DELETE']
+      })
+    ]
+  });
+  const zeroRulesResult = aerpAuthorize(request, {
+    rules: []
+  });
+
+  if (
+    noMatchResult.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+    zeroRulesResult.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+    noMatchResult.reason !== AERP_AUTHORIZATION_REASON.NO_MATCHING_RULE ||
+    zeroRulesResult.reason !== AERP_AUTHORIZATION_REASON.NO_MATCHING_RULE
+  ) {
+    throw new Error('No matches and zero rules must preserve immutable DENY.');
+  }
+
+  const invalidCollectionResult = aerpAuthorize(request, {
+    rules: [
+      allowHigh,
+      buildRule('RULE_INVALID_CONDITION', AERP_AUTHORIZATION_DECISION.DENY, 500, {
+        conditions: [
+          {
+            operator: 'EQ',
+            value: 'PRIVATE_INVALID_CONDITION'
+          }
+        ]
+      })
+    ]
+  });
+
+  if (
+    invalidCollectionResult.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+    invalidCollectionResult.reason !== AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_RULES ||
+    invalidCollectionResult.matchedRule !== null ||
+    invalidCollectionResult.decisionSummary !== null ||
+    JSON.stringify(invalidCollectionResult).indexOf('PRIVATE_INVALID_CONDITION') !== -1
+  ) {
+    throw new Error('Invalid collections must fail closed without partial results.');
+  }
+
+  assertInvalidRuleCollection(
+    [allowHigh, buildRule('RULE_UNKNOWN_EFFECT', 'UNKNOWN', 500)],
+    ['UNKNOWN'],
+    'An unknown effect must invalidate the complete collection.'
+  );
+
+  const missingEffectRule = buildRule('RULE_MISSING_EFFECT', AERP_AUTHORIZATION_DECISION.DENY, 500);
+  delete missingEffectRule.effect;
+  assertInvalidRuleCollection(
+    [allowHigh, missingEffectRule],
+    [],
+    'A missing effect must invalidate the complete collection.'
+  );
+  assertInvalidRuleCollection(
+    [allowHigh, null],
+    [],
+    'A null rule must invalidate the complete collection.'
+  );
+  assertInvalidRuleCollection(
+    [allowHigh, 'PRIVATE_INVALID_STRING_RULE'],
+    ['PRIVATE_INVALID_STRING_RULE'],
+    'A string rule must invalidate the complete collection.'
+  );
+  assertInvalidRuleCollection(
+    [allowHigh, 987654321],
+    ['987654321'],
+    'A numeric rule must invalidate the complete collection.'
+  );
+  assertInvalidRuleCollection(
+    [allowHigh, [buildRule('PRIVATE_ARRAY_RULE', AERP_AUTHORIZATION_DECISION.DENY, 1)]],
+    ['PRIVATE_ARRAY_RULE'],
+    'An array used as a rule must invalidate the complete collection.'
+  );
+
+  const rulesWithHole = [allowHigh];
+  rulesWithHole.length = 2;
+  assertInvalidRuleCollection(rulesWithHole, [], 'A sparse rule collection must fail closed.');
+
+  let effectGetterExecutions = 0;
+  const accessorEffectRule = buildRule(
+    'RULE_ACCESSOR_EFFECT',
+    AERP_AUTHORIZATION_DECISION.DENY,
+    500
+  );
+  Object.defineProperty(accessorEffectRule, 'effect', {
+    enumerable: true,
+    get: function () {
+      effectGetterExecutions += 1;
+      throw new Error('PRIVATE_EFFECT_GETTER_FAILURE');
+    }
+  });
+  assertInvalidRuleCollection(
+    [allowHigh, accessorEffectRule],
+    ['PRIVATE_EFFECT_GETTER_FAILURE'],
+    'An effect accessor must invalidate the complete collection.'
+  );
+
+  if (effectGetterExecutions !== 0) {
+    throw new Error('Consumed rule accessors must not execute.');
+  }
+
+  const unsafePolicyResult = aerpAuthorize(request, {
+    rules: [allowHigh],
+    decisionPolicy: {
+      conflictStrategy: 'ALLOW_PRECEDENCE'
+    }
+  });
+
+  if (
+    unsafePolicyResult.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+    unsafePolicyResult.reason !== AERP_AUTHORIZATION_REASON.INVALID_AUTHORIZATION_OPTIONS ||
+    JSON.stringify(unsafePolicyResult).indexOf('ALLOW_PRECEDENCE') !== -1
+  ) {
+    throw new Error('Unsafe conflict policies must return a sanitized DENY.');
+  }
+
+  const sensitiveDeny = buildRule('RULE_DENY_SANITIZED', AERP_AUTHORIZATION_DECISION.DENY, 3000, {
+    conditions: [
+      {
+        path: 'context.privateMarker',
+        operator: 'EQ',
+        value: 'PRIVATE_CONDITION_VALUE'
+      }
+    ],
+    metadata: {
+      privateValue: 'PRIVATE_RULE_METADATA'
+    }
+  });
+  const sanitizedResult = assertGlobalDeny(
+    [allowHigh, sensitiveDeny],
+    'RULE_DENY_SANITIZED',
+    'Sensitive DENY rule must still enforce precedence.'
+  );
+  const serializedSanitizedResult = JSON.stringify(sanitizedResult);
+
+  if (
+    serializedSanitizedResult.indexOf('PRIVATE_CONDITION_VALUE') !== -1 ||
+    serializedSanitizedResult.indexOf('PRIVATE_RULE_METADATA') !== -1 ||
+    sanitizedResult.matchedRule.conditions.length !== 0 ||
+    Object.keys(sanitizedResult.matchedRule.metadata).length !== 0
+  ) {
+    throw new Error('Public decisions must not expose conditions or metadata.');
+  }
+
+  const evaluationFailureRequest = {
+    subject: request.subject,
+    action: request.action,
+    resource: {
+      type: request.resource.type,
+      id: request.resource.id,
+      attributes: new Proxy(
+        {},
+        {
+          getOwnPropertyDescriptor: function () {
+            throw new Error('PRIVATE_EVALUATION_FAILURE');
+          }
+        }
+      )
+    },
+    context: request.context
+  };
+  const evaluationFailureResult = aerpAuthorize(evaluationFailureRequest, {
+    rules: [allowHigh, trueConditionDeny]
+  });
+
+  if (
+    evaluationFailureResult.decision !== AERP_AUTHORIZATION_DECISION.DENY ||
+    evaluationFailureResult.reason !== AERP_AUTHORIZATION_REASON.ENGINE_ERROR ||
+    evaluationFailureResult.ok !== false ||
+    JSON.stringify(evaluationFailureResult).indexOf('PRIVATE_EVALUATION_FAILURE') !== -1
+  ) {
+    throw new Error(
+      'Evaluation failures must abort partial ALLOW evidence through emergency DENY.'
+    );
+  }
+
+  const emergencyResult = testAuthorizationEmergencyDeny();
+
+  if (emergencyResult.decision !== AERP_AUTHORIZATION_DECISION.DENY) {
+    throw new Error('DT-SEC-03 emergency DENY must remain intact.');
+  }
+
+  console.log('AERP-036 Global DENY Precedence Test: OK');
+
+  return {
+    ok: true,
+    status: 'GLOBAL_DENY_PRECEDENCE_OK'
   };
 }
