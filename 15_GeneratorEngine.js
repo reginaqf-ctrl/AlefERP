@@ -126,9 +126,14 @@ function aerpBuildGeneratorEngineMVPFromMetadataModel(metadataModel) {
     const views = metadataModel.tables.map(aerpBuildGeneratorView_);
     const menus = metadataModel.tables.map(aerpBuildGeneratorMenu_);
     const application = aerpBuildApplicationObjectFromMetadata_(metadataModel);
+    const lineage = aerpBuildMetadataLineage_(metadataModel);
+    if (!aerpIsValidMetadataLineage_(lineage)) {
+      return aerpGenFailure_('GEN_METADATA_MODEL_INVALID', AERP_GEN_METADATA_ERROR_MESSAGE_);
+    }
 
     const builtResult = {
       ok: true,
+      lineage,
       application,
       tables,
       forms,
@@ -594,6 +599,7 @@ function aerpGenValidateBuiltResult_(result, model) {
   if (
     !aerpGenHasDataFields_(result, [
       'ok',
+      'lineage',
       'application',
       'tables',
       'forms',
@@ -603,6 +609,8 @@ function aerpGenValidateBuiltResult_(result, model) {
       'diagnostics'
     ]) ||
     result.ok !== true ||
+    !aerpIsValidMetadataLineage_(result.lineage) ||
+    !aerpMetadataLineageEquals_(result.lineage, aerpBuildMetadataLineage_(model)) ||
     !aerpGenSafeArray_(result.tables) ||
     !aerpGenSafeArray_(result.forms) ||
     !aerpGenSafeArray_(result.views) ||
@@ -852,6 +860,7 @@ function aerpBuildGeneratorMenu_(table) {
 function aerpGenFailure_(code, message) {
   return {
     ok: false,
+    lineage: null,
     application: null,
     tables: [],
     forms: [],
@@ -873,6 +882,7 @@ function aerpGenFailure_(code, message) {
 function aerpGenCopyResult_(result) {
   return {
     ok: result.ok,
+    lineage: result.lineage ? { ...result.lineage } : null,
     application: result.application ? { ...result.application } : null,
     tables: result.tables.map(function (table) {
       return {

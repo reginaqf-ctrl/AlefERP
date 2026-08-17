@@ -69,6 +69,7 @@ function aerpBuildAppSheetPackageFromGenerator(generatorResult) {
     };
     const builtResult = {
       ok: true,
+      lineage: { ...generatorResult.lineage },
       package: pkg,
       summary: {
         tables: pkg.tables.length,
@@ -84,7 +85,8 @@ function aerpBuildAppSheetPackageFromGenerator(generatorResult) {
     };
     if (
       !aerpAsgValidateBuiltPackage_(pkg, generatorResult) ||
-      !aerpAsgValidateBuiltResult_(builtResult)
+      !aerpAsgValidateBuiltResult_(builtResult) ||
+      !aerpMetadataLineageEquals_(builtResult.lineage, generatorResult.lineage)
     ) {
       return aerpAsgFailure_('ASG_PACKAGE_INVALID', AERP_ASG_PACKAGE_ERROR_MESSAGE_);
     }
@@ -123,6 +125,7 @@ function aerpAsgValidateGeneratorResult_(result) {
   if (
     !aerpAsgHasDataFields_(result, [
       'ok',
+      'lineage',
       'application',
       'tables',
       'forms',
@@ -132,6 +135,7 @@ function aerpAsgValidateGeneratorResult_(result) {
       'diagnostics'
     ]) ||
     result.ok !== true ||
+    !aerpIsValidMetadataLineage_(result.lineage) ||
     !aerpAsgValidateApplication_(result.application) ||
     !aerpAsgSafeArray_(result.tables) ||
     !aerpAsgSafeArray_(result.forms) ||
@@ -623,6 +627,7 @@ function aerpAsgValidateBuiltResult_(result) {
   return (
     aerpAsgHasDataFields_(result, [
       'ok',
+      'lineage',
       'package',
       'summary',
       'warnings',
@@ -630,6 +635,7 @@ function aerpAsgValidateBuiltResult_(result) {
       'diagnostics'
     ]) &&
     result.ok === true &&
+    aerpIsValidMetadataLineage_(result.lineage) &&
     aerpAsgHasDataFields_(result.summary, [
       'tables',
       'columns',
@@ -793,6 +799,7 @@ function aerpAsgValidateBuiltMenu_(menu, source, tablesByName, viewsById) {
 function aerpAsgFailure_(code, message) {
   return {
     ok: false,
+    lineage: null,
     package: null,
     summary: { tables: 0, columns: 0, forms: 0, views: 0, menus: 0, durationMs: 0 },
     warnings: [],
@@ -804,6 +811,7 @@ function aerpAsgFailure_(code, message) {
 function aerpAsgCopyResult_(result) {
   return {
     ok: result.ok,
+    lineage: result.lineage ? { ...result.lineage } : null,
     package: result.package
       ? {
           app: { ...result.package.app },

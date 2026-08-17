@@ -6,6 +6,10 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
+const metadataWrapperSource = fs.readFileSync(
+  path.join(__dirname, '14_MetadataBuilder.js'),
+  'utf8'
+);
 const generatorSource = fs.readFileSync(path.join(__dirname, '15_GeneratorEngine.js'), 'utf8');
 const appSheetSource = fs.readFileSync(path.join(__dirname, '16_AppSheetGenerator.js'), 'utf8');
 
@@ -134,7 +138,7 @@ function load(options = {}) {
       }
     }
   });
-  vm.runInContext(generatorSource + '\n' + appSheetSource, context);
+  vm.runInContext(metadataWrapperSource + '\n' + generatorSource + '\n' + appSheetSource, context);
   context.metadataFixture = vm.runInContext(
     '(' + JSON.stringify(options.metadata || metadataModel()) + ')',
     context
@@ -163,6 +167,7 @@ function appSheetCore(context, expression = 'generatorFixture') {
 
 function assertGeneratorClosed(result, code) {
   assert.equal(result.ok, false);
+  assert.equal(result.lineage, null);
   assert.equal(result.application, null);
   for (const field of ['tables', 'forms', 'views', 'menus']) {
     assert.deepEqual(plain(result[field]), []);
@@ -173,6 +178,7 @@ function assertGeneratorClosed(result, code) {
 
 function assertAppSheetClosed(result, code) {
   assert.equal(result.ok, false);
+  assert.equal(result.lineage, null);
   assert.equal(result.package, null);
   assert.equal(result.diagnostics[0].code, code);
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|stack|Formula_App|CORE_PRIVATE/);
@@ -181,6 +187,7 @@ function assertAppSheetClosed(result, code) {
 test('Generator injectable builds a valid compatible result', () => {
   const result = generatorCore(load());
   assert.equal(result.ok, true);
+  assert.match(result.lineage.metadataFingerprint, /^[0-9a-f]{64}$/);
   assert.equal(result.tables[0].physicalName, 'CORE_ITEMS');
   assert.equal(result.tables[0].primaryKey, 'ID_Item');
   assert.equal(result.summary.tables, 1);
@@ -206,6 +213,7 @@ test('Generator wrapper calls Metadata Builder and injectable API exactly once w
   );
   const result = vm.runInContext('aerpBuildGeneratorEngineMVP()', context);
   assert.equal(result.ok, true);
+  assert.match(result.lineage.metadataFingerprint, /^[0-9a-f]{64}$/);
   assert.equal(context.calls.metadata, 1);
   assert.equal(context.calls.generator, 1);
   assert.equal(context.calls.sameMetadata, true);
@@ -359,11 +367,23 @@ function contextWithGenerator() {
 test('AppSheet injectable builds the compatible public success shape', () => {
   const result = appSheetCore(contextWithGenerator());
   assert.equal(result.ok, true);
+  assert.match(result.lineage.metadataFingerprint, /^[0-9a-f]{64}$/);
   assert.equal(result.package.tables.length, 1);
   assert.equal(result.package.columns.length, 1);
   assert.equal(result.package.tables[0].keyColumn, 'ID_Item');
   assert.equal(result.summary.durationMs, 0);
   assert.deepEqual(plain(result.diagnostics), []);
+});
+
+test('Generator derives lineage internally and AppSheet propagates the accepted lineage', () => {
+  const context = load();
+  const generator = generatorCore(context);
+  assert.match(generator.lineage.metadataFingerprint, /^[0-9a-f]{64}$/);
+  context.generatorFixture = generator;
+  context.generatorFixture.lineage.metadataFingerprint = '0'.repeat(64);
+  const appSheet = appSheetCore(context);
+  assert.equal(appSheet.ok, true);
+  assert.equal(appSheet.lineage.metadataFingerprint, '0'.repeat(64));
 });
 
 test('AppSheet injectable never calls Generator or Metadata Builder', () => {

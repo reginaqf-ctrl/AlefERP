@@ -30,6 +30,7 @@ Success:
 ```javascript
 {
   ok: true,
+  lineage: { algorithm: "SHA-256", version: "1.0.0", metadataFingerprint },
   application,
   tables,
   forms,
@@ -53,6 +54,7 @@ Invalid input:
 ```javascript
 {
   ok: false,
+  lineage: null,
   application: null,
   tables: [],
   forms: [],
@@ -104,6 +106,7 @@ Success:
 ```javascript
 {
   ok: true,
+  lineage: { algorithm: "SHA-256", version: "1.0.0", metadataFingerprint },
   package,
   summary: {
     tables,
@@ -128,6 +131,7 @@ Unexpected exceptions use this result:
 ```javascript
 {
   ok: false,
+  lineage: null,
   package: null,
   summary: {
     tables: 0,
@@ -180,7 +184,7 @@ It does not call `aerpBuildGeneratorEngineMVP()`. A Generator failure stops the 
 
 ## 7. Compatibility
 
-Successful Generator and AppSheet shapes retain all fields used by current consumers. Generator adds `ok` and `diagnostics`. Existing no-argument wrappers and manual test entrypoints remain callable.
+Successful Generator and AppSheet shapes retain all fields used by current consumers. Generator adds `ok`, `diagnostics` and the additive `lineage`; AppSheet adds the same additive `lineage`. Existing no-argument wrappers and manual test entrypoints remain callable.
 
 Telemetry fields remain legacy wrapper concerns. Injectable APIs always return `durationMs:0` and do not consult a clock.
 
@@ -197,3 +201,187 @@ Pending for AERP-038B Phase 2:
 - prove that no package or deployment writer receives a partial result.
 
 Phase 1 does not design AppSheet slices, actions or automations and does not introduce cache or persistent state.
+
+## 9. Approved AERP-038B Phase 2 architecture
+
+The approved operational direction is:
+
+- `Generar ERP` never rebuilds or overwrites `CORE_COLUMNAS`.
+- Metadata synchronization remains a separate explicit action.
+- Pipeline becomes the only operational orchestrator in Phase 2B.
+- `12_DryRun.js` is the canonical public owner of `runAlefERPDryRun()`.
+- The duplicate global declaration in `10_Main.js` is resolved in Phase 2B.
+- Workflow stops rebuilding `CORE_COLUMNAS` in Phase 2B.
+- The future `aerpRunBuildWorkflow().metadata` field is a sanitized summary of the MetadataModel actually consumed.
+
+Phase 2 is split deliberately:
+
+- Phase 2A adds and proves the pure in-memory path without connecting effects.
+- Phase 2B connects Pipeline, Deployment and Workflow and resolves the legacy DryRun collision.
+
+## 10. Pure FrameworkSchema consumer
+
+```javascript
+aerpBuildMetadataModelFromFrameworkSchema(frameworkSchema);
+```
+
+This API receives one prebuilt FrameworkSchema, invokes the strict builder exactly once, validates the strict result and creates the approved legacy MetadataModel adaptation. It does not call `aerpBuildFrameworkSchema()` and does not access Sheets, Logger, a clock, UUID services, locks, properties or mutable global build state.
+
+Its successful output retains the public MetadataModel shape, with pure telemetry values:
+
+```javascript
+{
+  version,
+  generatedAt: null,
+  tables,
+  summary: {
+    ok: true,
+    contractVersion: "1.0.0",
+    tables,
+    columns,
+    primaryKeys,
+    foreignKeys,
+    labels,
+    warnings,
+    errors: [],
+    diagnostics,
+    durationMs: 0
+  }
+}
+```
+
+Failure uses the existing sanitized `MBE_INTERNAL_ERROR` legacy failure and returns no tables. The public no-argument `aerpBuildMetadataModel()` remains compatible: it constructs FrameworkSchema once, calls this API once and adds wrapper-owned time values.
+
+## 11. Pure single-build bundle
+
+```javascript
+aerpBuildSingleMetadataArtifactsFromFrameworkSchema(frameworkSchema);
+```
+
+The API executes exactly this sequence:
+
+```text
+aerpBuildMetadataModelFromFrameworkSchema()       once
+  -> aerpBuildGeneratorEngineMVPFromMetadataModel() once
+  -> aerpBuildAppSheetPackageFromGenerator()        once
+  -> aerpValidateSingleBuildArtifacts()              once
+```
+
+It never invokes the public MetadataModel, Generator or AppSheet wrappers. It does not accept production callbacks or service objects.
+
+Success:
+
+```javascript
+{
+  ok: true,
+  lineage: { algorithm: "SHA-256", version: "1.0.0", metadataFingerprint },
+  metadataModel,
+  generatorResult,
+  appSheetResult,
+  summary: {
+    contractVersion: "1.0.0",
+    tables,
+    columns,
+    primaryKeys,
+    foreignKeys,
+    labels,
+    forms,
+    views,
+    menus
+  },
+  diagnostics: []
+}
+```
+
+Each local stage receives the exact object returned by the immediately preceding local stage. After validation, the public bundle is returned as an independent deep copy and is deeply frozen. No returned artifact shares a mutable reference with FrameworkSchema, a stage-local artifact or its predecessor.
+
+Failure:
+
+```javascript
+{
+  ok: false,
+  lineage: null,
+  metadataModel: null,
+  generatorResult: null,
+  appSheetResult: null,
+  summary: {
+    contractVersion: "1.0.0",
+    tables: 0,
+    columns: 0,
+    primaryKeys: 0,
+    foreignKeys: 0,
+    labels: 0,
+    forms: 0,
+    views: 0,
+    menus: 0
+  },
+  diagnostics: [{ code, severity: "ERROR", stage: "SINGLE_BUILD", message }]
+}
+```
+
+Approved failure codes are `SB_METADATA_MODEL_FAILED`, `SB_GENERATOR_FAILED`, `SB_APPSHEET_FAILED`, `SB_VALIDATION_FAILED` and `SB_INTERNAL_ERROR`. Messages are fixed. Failure at one stage prevents every later stage and removes every partial artifact. Success and failure bundles are deeply frozen.
+
+### 11.1 Deterministic lineage
+
+Lineage is computed internally from the complete validated MetadataModel using a pure JavaScript SHA-256 implementation. Canonicalization uses ordinal key ordering and rejects accessors, Symbols, sparse or extended arrays, altered prototypes, non-plain objects, unsupported values and cycles. It excludes only non-contractual telemetry: root `generatedAt` and `summary.durationMs`.
+
+The lineage object has the closed shape `{ algorithm: "SHA-256", version: "1.0.0", metadataFingerprint }`. Generator derives it from its MetadataModel input; AppSheet propagates the structurally valid Generator lineage because it does not receive MetadataModel; and the bundle recalculates lineage independently from MetadataModel as the final trust boundary. The bundle never accepts a caller-provided fingerprint as proof by itself: MetadataModel, Generator, AppSheet and bundle fingerprints must match exactly in addition to complete cross-artifact validation. Artifacts from distinct validated builds with different MetadataModels therefore cannot be combined.
+
+Dos MetadataModel canónicamente idénticos son equivalentes para lineage y deben producir exactamente el mismo `metadataFingerprint`. Las diferencias en cualquier campo contractual no excluido deben producir una representación canónica diferente y, salvo una colisión criptográfica de SHA-256, un fingerprint diferente.
+
+## 12. Pure artifact validation
+
+```javascript
+aerpValidateSingleBuildArtifacts(artifacts);
+```
+
+This API validates the complete closed bundle and the cross-artifact relationship. It delegates only to the already approved pure defensive validators; it does not rebuild any artifact.
+
+It verifies:
+
+- closed shapes, safe descriptors and standard prototypes;
+- dense arrays without Symbols or extra properties;
+- MetadataModel, Generator and AppSheet internal validity;
+- version equality across all three artifacts;
+- exact counts for tables, columns, keys, foreign keys, labels, forms, views and menus;
+- exact Generator-to-Metadata and AppSheet-to-Generator projections.
+- SHA-256 lineage recalculated from MetadataModel and exact fingerprint equality across the bundle, Generator and AppSheet.
+
+It never executes accessors and returns only a sanitized validation result:
+
+```javascript
+{
+  ok,
+  summary: {
+    contractVersion: "1.0.0",
+    tables,
+    columns,
+    primaryKeys,
+    foreignKeys,
+    labels,
+    forms,
+    views,
+    menus
+  },
+  diagnostics
+}
+```
+
+Failure uses `SBV_ARTIFACTS_INVALID`, `lineage:null`, all three artifact fields set to `null`, zero counts and no business identifiers or artifacts. The validator verifies the AppSheet result shape before accessing its nested package, so hostile nested accessors are not executed.
+
+This API is distinct from physical `runAlefERPDryRun()`. The physical DryRun continues to inspect Sheets and compare scanned metadata with `CORE_COLUMNAS`; it is never called by the in-memory bundle.
+
+## 13. Phase 2A effect boundary
+
+Phase 2A does not connect `aerpRunBuildPipeline()` to the bundle. The current operational calls, monitoring and writes remain unchanged until Phase 2B.
+
+The pure APIs prohibit:
+
+- Spreadsheet reads or writes;
+- monitor creation;
+- deployment;
+- physical DryRun or metadata synchronization;
+- Logger, current timestamps, UUID generation, locks and properties;
+- caches, singletons and hidden persistent state.
+
+Phase 2B will connect the validated bundle to Pipeline, make Pipeline the single operational orchestrator, adapt Deployment and Workflow, remove Workflow metadata rebuild and resolve the duplicate `runAlefERPDryRun()` declaration. No Phase 2A API writes `CORE_COLUMNAS` or any operational sheet.

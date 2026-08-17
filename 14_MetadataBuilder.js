@@ -35,7 +35,7 @@ const AERP_METADATA_WRAPPER_DATA_TYPES_ = Object.freeze([
   'LatLong',
   'Color'
 ]);
-const AERP_METADATA_WRAPPER_SUMMARY_FIELDS_ = [
+const AERP_METADATA_WRAPPER_SUMMARY_FIELDS_ = Object.freeze([
   'tables',
   'activeTables',
   'inactiveTables',
@@ -46,37 +46,283 @@ const AERP_METADATA_WRAPPER_SUMMARY_FIELDS_ = [
   'labels',
   'errors',
   'warnings'
-];
-const AERP_METADATA_WRAPPER_CAPABILITIES_ = [
-  ['visibleColumnIds', 'visibleColumns', 'visible'],
-  ['editableColumnIds', 'editableColumns', 'editable'],
-  ['requiredColumnIds', 'requiredColumns', 'required'],
-  ['searchableColumnIds', 'searchableColumns', 'searchable'],
-  ['filterableColumnIds', 'filterableColumns', 'filterable'],
-  ['sortableColumnIds', 'sortableColumns', 'sortable'],
-  ['indexedColumnIds', 'indexedColumns', 'indexed'],
-  ['virtualColumnIds', 'virtualColumns', 'virtual']
-];
+]);
+const AERP_METADATA_WRAPPER_CAPABILITIES_ = Object.freeze([
+  Object.freeze(['visibleColumnIds', 'visibleColumns', 'visible']),
+  Object.freeze(['editableColumnIds', 'editableColumns', 'editable']),
+  Object.freeze(['requiredColumnIds', 'requiredColumns', 'required']),
+  Object.freeze(['searchableColumnIds', 'searchableColumns', 'searchable']),
+  Object.freeze(['filterableColumnIds', 'filterableColumns', 'filterable']),
+  Object.freeze(['sortableColumnIds', 'sortableColumns', 'sortable']),
+  Object.freeze(['indexedColumnIds', 'indexedColumns', 'indexed']),
+  Object.freeze(['virtualColumnIds', 'virtualColumns', 'virtual'])
+]);
+const AERP_METADATA_LINEAGE_ALGORITHM_ = 'SHA-256';
+const AERP_METADATA_LINEAGE_VERSION_ = '1.0.0';
+
+function aerpBuildMetadataLineage_(metadataModel) {
+  try {
+    const canonical = aerpLineageCanonicalize_(metadataModel, '$', new WeakSet(), 0);
+    if (canonical === null) return null;
+    return {
+      algorithm: AERP_METADATA_LINEAGE_ALGORITHM_,
+      version: AERP_METADATA_LINEAGE_VERSION_,
+      metadataFingerprint: aerpLineageSha256_(canonical)
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function aerpIsValidMetadataLineage_(lineage) {
+  return Boolean(
+    aerpHasExactDataFields_(lineage, ['algorithm', 'version', 'metadataFingerprint']) &&
+    lineage.algorithm === AERP_METADATA_LINEAGE_ALGORITHM_ &&
+    lineage.version === AERP_METADATA_LINEAGE_VERSION_ &&
+    typeof lineage.metadataFingerprint === 'string' &&
+    /^[0-9a-f]{64}$/.test(lineage.metadataFingerprint)
+  );
+}
+
+function aerpMetadataLineageEquals_(left, right) {
+  return Boolean(
+    aerpIsValidMetadataLineage_(left) &&
+    aerpIsValidMetadataLineage_(right) &&
+    left.algorithm === right.algorithm &&
+    left.version === right.version &&
+    left.metadataFingerprint === right.metadataFingerprint
+  );
+}
+
+function aerpLineageCanonicalize_(value, path, seen, depth) {
+  if (depth > 128) return null;
+  if (value === null) return 'null';
+  if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? JSON.stringify(value) : null;
+  if (typeof value !== 'object' || seen.has(value)) return null;
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) return null;
+      const keys = Reflect.ownKeys(value);
+      if (keys.length !== value.length + 1 || keys[keys.length - 1] !== 'length') return null;
+      const entries = [];
+      for (let index = 0; index < value.length; index += 1) {
+        if (keys[index] !== String(index)) return null;
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) return null;
+        const canonical = aerpLineageCanonicalize_(
+          descriptor.value,
+          path + '[' + index + ']',
+          seen,
+          depth + 1
+        );
+        if (canonical === null) return null;
+        entries.push(canonical);
+      }
+      return '[' + entries.join(',') + ']';
+    }
+    if (Object.getPrototypeOf(value) !== Object.prototype) return null;
+    const keys = Reflect.ownKeys(value);
+    if (
+      keys.some(function (key) {
+        return typeof key !== 'string';
+      })
+    ) {
+      return null;
+    }
+    if (
+      keys.some(function (key) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        return !descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value');
+      })
+    ) {
+      return null;
+    }
+    const includedKeys = keys
+      .filter(function (key) {
+        return !(
+          (path === '$' && key === 'generatedAt') ||
+          (path === '$.summary' && key === 'durationMs')
+        );
+      })
+      .sort(aerpLineageCompareOrdinal_);
+    const entries = [];
+    for (let index = 0; index < includedKeys.length; index += 1) {
+      const key = includedKeys[index];
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) return null;
+      const canonical = aerpLineageCanonicalize_(
+        descriptor.value,
+        path + '.' + key,
+        seen,
+        depth + 1
+      );
+      if (canonical === null) return null;
+      entries.push(JSON.stringify(key) + ':' + canonical);
+    }
+    return '{' + entries.join(',') + '}';
+  } finally {
+    seen.delete(value);
+  }
+}
+
+function aerpLineageCompareOrdinal_(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function aerpLineageSha256_(text) {
+  const bytes = aerpLineageUtf8Bytes_(text);
+  const bitLength = bytes.length * 8;
+  bytes.push(128);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  const high = Math.floor(bitLength / 4294967296);
+  const low = bitLength >>> 0;
+  for (let shift = 24; shift >= 0; shift -= 8) bytes.push((high >>> shift) & 255);
+  for (let shift = 24; shift >= 0; shift -= 8) bytes.push((low >>> shift) & 255);
+
+  const hash = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+  ];
+  const constants = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ];
+  const words = new Array(64);
+  for (let offset = 0; offset < bytes.length; offset += 64) {
+    for (let index = 0; index < 16; index += 1) {
+      const start = offset + index * 4;
+      words[index] =
+        ((bytes[start] << 24) |
+          (bytes[start + 1] << 16) |
+          (bytes[start + 2] << 8) |
+          bytes[start + 3]) >>>
+        0;
+    }
+    for (let index = 16; index < 64; index += 1) {
+      const s0 =
+        (aerpLineageRotateRight_(words[index - 15], 7) ^
+          aerpLineageRotateRight_(words[index - 15], 18) ^
+          (words[index - 15] >>> 3)) >>>
+        0;
+      const s1 =
+        (aerpLineageRotateRight_(words[index - 2], 17) ^
+          aerpLineageRotateRight_(words[index - 2], 19) ^
+          (words[index - 2] >>> 10)) >>>
+        0;
+      words[index] = (words[index - 16] + s0 + words[index - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = hash;
+    for (let index = 0; index < 64; index += 1) {
+      const sum1 =
+        (aerpLineageRotateRight_(e, 6) ^
+          aerpLineageRotateRight_(e, 11) ^
+          aerpLineageRotateRight_(e, 25)) >>>
+        0;
+      const choice = ((e & f) ^ (~e & g)) >>> 0;
+      const temp1 = (h + sum1 + choice + constants[index] + words[index]) >>> 0;
+      const sum0 =
+        (aerpLineageRotateRight_(a, 2) ^
+          aerpLineageRotateRight_(a, 13) ^
+          aerpLineageRotateRight_(a, 22)) >>>
+        0;
+      const majority = ((a & b) ^ (a & c) ^ (b & c)) >>> 0;
+      const temp2 = (sum0 + majority) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) >>> 0;
+    }
+    hash[0] = (hash[0] + a) >>> 0;
+    hash[1] = (hash[1] + b) >>> 0;
+    hash[2] = (hash[2] + c) >>> 0;
+    hash[3] = (hash[3] + d) >>> 0;
+    hash[4] = (hash[4] + e) >>> 0;
+    hash[5] = (hash[5] + f) >>> 0;
+    hash[6] = (hash[6] + g) >>> 0;
+    hash[7] = (hash[7] + h) >>> 0;
+  }
+  return hash
+    .map(function (value) {
+      return ('00000000' + value.toString(16)).slice(-8);
+    })
+    .join('');
+}
+
+function aerpLineageRotateRight_(value, bits) {
+  return ((value >>> bits) | (value << (32 - bits))) >>> 0;
+}
+
+function aerpLineageUtf8Bytes_(text) {
+  const bytes = [];
+  for (let index = 0; index < text.length; index += 1) {
+    let code = text.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) throw new Error('Invalid UTF-16');
+      code = 0x10000 + ((code - 0xd800) << 10) + (next - 0xdc00);
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      throw new Error('Invalid UTF-16');
+    }
+    if (code < 128) bytes.push(code);
+    else if (code < 2048) bytes.push(192 | (code >> 6), 128 | (code & 63));
+    else if (code < 65536)
+      bytes.push(224 | (code >> 12), 128 | ((code >> 6) & 63), 128 | (code & 63));
+    else
+      bytes.push(
+        240 | (code >> 18),
+        128 | ((code >> 12) & 63),
+        128 | ((code >> 6) & 63),
+        128 | (code & 63)
+      );
+  }
+  return bytes;
+}
 
 function aerpBuildMetadataModel() {
   try {
     const start = new Date();
     const schema = aerpBuildFrameworkSchema();
-    if (typeof aerpBuildMetadataModelFromSchema !== 'function') {
-      return aerpBuildLegacyMetadataFailure_();
+    const result = aerpBuildMetadataModelFromFrameworkSchema(schema);
+    if (result.summary.ok) {
+      result.generatedAt = new Date();
+      result.summary.durationMs = new Date() - start;
     }
-    const strictResult = aerpBuildMetadataModelFromSchema(schema);
+    return result;
+  } catch (_error) {
+    return aerpBuildLegacyMetadataFailure_();
+  }
+}
+
+function aerpBuildMetadataModelFromFrameworkSchema(frameworkSchema) {
+  try {
+    const version = aerpGetFrameworkSchemaVersion_(frameworkSchema);
+    if (typeof aerpBuildMetadataModelFromSchema !== 'function') {
+      return aerpBuildLegacyMetadataFailureFromVersion_(version);
+    }
+    const strictResult = aerpBuildMetadataModelFromSchema(frameworkSchema);
     const validation = aerpValidateStrictMetadataResult_(strictResult);
     if (!validation.ok) {
-      return aerpBuildLegacyMetadataFailure_();
+      return aerpBuildLegacyMetadataFailureFromVersion_(version);
     }
     const tables = strictResult.model.tables.map(aerpAdaptStrictTableToLegacy_);
-    const generatedAt = new Date();
-    const durationMs = new Date() - start;
     const diagnostics = aerpCopyStrictDiagnostics_(strictResult.diagnostics);
     return {
       version: strictResult.model.sourceSchemaVersion,
-      generatedAt,
+      generatedAt: null,
       tables,
       summary: {
         ok: true,
@@ -89,11 +335,27 @@ function aerpBuildMetadataModel() {
         warnings: aerpDiagnosticMessagesBySeverity_(diagnostics, 'WARNING'),
         errors: [],
         diagnostics,
-        durationMs
+        durationMs: 0
       }
     };
   } catch (_error) {
-    return aerpBuildLegacyMetadataFailure_();
+    return aerpBuildLegacyMetadataFailureFromVersion_(
+      aerpGetFrameworkSchemaVersion_(frameworkSchema)
+    );
+  }
+}
+
+function aerpGetFrameworkSchemaVersion_(frameworkSchema) {
+  try {
+    if (frameworkSchema === null || typeof frameworkSchema !== 'object') return '';
+    const descriptor = Object.getOwnPropertyDescriptor(frameworkSchema, 'version');
+    return descriptor &&
+      Object.prototype.hasOwnProperty.call(descriptor, 'value') &&
+      typeof descriptor.value === 'string'
+      ? descriptor.value
+      : '';
+  } catch (_error) {
+    return '';
   }
 }
 
@@ -698,6 +960,12 @@ function aerpDiagnosticMessagesBySeverity_(diagnostics, severity) {
 }
 
 function aerpBuildLegacyMetadataFailure_() {
+  return aerpBuildLegacyMetadataFailureFromVersion_(
+    typeof AERP_VERSION === 'string' ? AERP_VERSION : ''
+  );
+}
+
+function aerpBuildLegacyMetadataFailureFromVersion_(version) {
   const safeDiagnostics = [
     {
       code: 'MBE_INTERNAL_ERROR',
@@ -707,7 +975,7 @@ function aerpBuildLegacyMetadataFailure_() {
     }
   ];
   return {
-    version: typeof AERP_VERSION === 'string' ? AERP_VERSION : '',
+    version: typeof version === 'string' ? version : '',
     generatedAt: null,
     tables: [],
     summary: {
