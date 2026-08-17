@@ -140,13 +140,17 @@ Long Text -> LongText
 
 - An active table has exactly one active column with `Es_Key:true`.
 - Composite PKs are not supported in 1.0.0.
-- Valid PK types are `Text` and `Number`.
+- The only valid PK types in contract version 1.0.0 are `Text` and `Number`.
+- `Ref` is not permitted as a PK type in contract version 1.0.0.
 - `Email` and all other types are rejected as PK types.
 - A PK is required, non-nullable, non-virtual and active.
 - PK plus FK on the same column is rejected under ADR-002.
 - No `ID_*`, first-column or position fallback exists.
+- No `Nombre`, `Codigo` or other name-based fallback exists for PK or label resolution.
 
 An inactive table does not require a PK. An inactive column cannot declare an effective PK.
+
+Legacy metadata that uses `Ref` as a PK is potentially incompatible with this contract. It must be audited and migrated under an approved, backed-up and reversible operational procedure before the strict production wrapper is activated in another environment. The required operational controls are defined in `MIGRATION-AERP-038A-MetadataModel-v1.0.0.md`.
 
 ## 5. Label invariants
 
@@ -293,6 +297,14 @@ Public diagnostic messages are fixed by code. Diagnostics never contain original
 
 It does not write Sheets, activate a production wrapper or return complete metadata.
 
+The audit is mandatory before activating the strict wrapper in an environment with legacy metadata. A successful audit does not replace the need to back up, migrate and verify incompatible metadata.
+
+## 12.1 Production wrapper integration
+
+AERP-038A Phase 2 includes the strict production wrapper in `14_MetadataBuilder.js`. The wrapper obtains `FrameworkSchema`, invokes the pure contract builder once per wrapper invocation, validates the strict result defensively and adapts it to the legacy shape required by the current consumers.
+
+Platform-specific AppSheet, SQL and API projections and historical column classifications remain confined to this compatibility wrapper. They are not part of the neutral `MetadataModel` contract.
+
 ## 13. Versioning policy
 
 The contract uses Semantic Versioning:
@@ -303,12 +315,11 @@ The contract uses Semantic Versioning:
 
 Consumers must reject unsupported major versions. Unknown input fields remain errors until introduced by a supported contract version.
 
-## 14. AERP-038A limitations
+## 14. AERP-038A limitations and subsequent scope
 
-AERP-038A does not implement:
+AERP-038A does not modify:
 
-- the production wrapper in `14_MetadataBuilder.js`;
-- Generator, AppSheet Generator or Build Pipeline integration;
+- Generator, AppSheet Generator or Build Pipeline consumers;
 - DryRun integration;
 - `CORE_RELACIONES` or `CORE_VISTAS`;
 - composite PKs or relationships;
@@ -316,4 +327,4 @@ AERP-038A does not implement:
 - bridge/view/system/business classification;
 - cardinality, cascade or deployment behavior.
 
-Consumer integration and production migration belong to AERP-038B.
+AERP-038B is reserved for consumer changes and for eliminating repeated metadata reconstruction between Generator, AppSheet Generator and Build Pipeline. Operational migration required to activate AERP-038A in an environment is governed by `MIGRATION-AERP-038A-MetadataModel-v1.0.0.md`; it is not deferred to AERP-038B.
