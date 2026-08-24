@@ -765,15 +765,17 @@ test('canonical physical DryRun keeps its public legacy response behavior', () =
   assert.deepEqual(plain(result.advertencias), []);
 });
 
-test('operational Pipeline remains deliberately disconnected in Phase 2A', () => {
+test('operational Pipeline uses only the single-build entrypoint', () => {
   const operational = pipelineSource.slice(
     pipelineSource.indexOf('function aerpRunBuildPipeline()'),
     pipelineSource.indexOf('function aerpBuildPipelineSummary_')
   );
-  assert.doesNotMatch(operational, /aerpBuildSingleMetadataArtifactsFromFrameworkSchema/);
-  assert.match(operational, /runAlefERPDryRun\(\)/);
-  assert.match(operational, /aerpBuildGeneratorEngineMVP\(\)/);
-  assert.match(operational, /aerpBuildAppSheetPackage\(\)/);
+  assert.match(operational, /aerpBuildFrameworkSchema\(\)/);
+  assert.match(operational, /aerpBuildSingleMetadataArtifactsFromFrameworkSchema/);
+  assert.doesNotMatch(
+    operational,
+    /runAlefERPDryRun\(|aerpBuildMetadataModel\(|aerpBuildGeneratorEngineMVP\(|aerpBuildAppSheetPackage\(|aerpGenerate\(/
+  );
 });
 
 test('static pure APIs contain no forbidden operational calls or callback injection', () => {

@@ -222,114 +222,257 @@ function aerpSbpCloneAndDeepFreeze_(source) {
   }
 }
 
-// AERP-038B Phase 2B will connect this pure bundle to the existing operational pipeline.
-// The public aerpRunBuildPipeline flow below deliberately remains unchanged in Phase 2A.
+const AERP_OPERATIONAL_PIPELINE_MESSAGES_ = Object.freeze({
+  PIPELINE_LOCK_BUSY: 'Alef ERP ya está ejecutando otra operación de build.',
+  PIPELINE_LOCK_FAILED: 'No fue posible adquirir el lock operativo de Alef ERP.',
+  PIPELINE_INSTALLATION_FAILED: 'La instalación no superó la validación operativa.',
+  PIPELINE_SCHEMA_FAILED: 'FrameworkSchema no superó la validación operativa.',
+  PIPELINE_BUNDLE_FAILED: 'El bundle single-build no pudo construirse de forma segura.',
+  PIPELINE_VALIDATION_FAILED: 'El bundle congelado no superó la validación operativa.',
+  PIPELINE_WRITE_FAILED: 'No fue posible completar las escrituras operativas.',
+  PIPELINE_INTERNAL_ERROR: 'No fue posible completar el Pipeline de Alef ERP.'
+});
+const AERP_OPERATIONAL_LOCK_TIMEOUT_MS_ = 5000;
 
-function aerpRunBuildPipeline() {
-  const monitor = aerpStartBuildMonitor();
-  const sheet = monitor.sheet;
-  const globalStart = monitor.start;
-
-  let packageResult;
-
+function aerpPipelineFrameworkSchemaReady_(schema) {
   try {
-    aerpBuildStep(sheet, 'Installer', '⏳ RUNNING', 'Validando instalación...', globalStart);
-    const install = aerpInstallCheck();
-
-    if (!install.ok) {
-      aerpBuildStep(sheet, 'Installer', '❌ ERROR', install.errors.join(' | '), globalStart);
-      throw new Error('Instalación inválida.');
-    }
-
-    aerpBuildStep(sheet, 'Installer', '✅ OK', 'Instalación validada', globalStart);
-
-    aerpBuildStep(sheet, 'DryRun', '⏳ RUNNING', 'Validando metadata...', globalStart);
-    const dryRun = runAlefERPDryRun();
-    aerpBuildStep(
-      sheet,
-      'DryRun',
-      '✅ OK',
-      dryRun.columnasDetectadas + ' columnas detectadas',
-      globalStart
+    return Boolean(
+      aerpSbHasExactDataFields_(schema, ['version', 'generatedAt', 'tables', 'summary']) &&
+      typeof schema.version === 'string' &&
+      schema.version !== '' &&
+      aerpSbSafeDenseArray_(schema.tables) &&
+      schema.tables.length > 0 &&
+      aerpSbHasExactDataFields_(schema.summary, [
+        'tables',
+        'columns',
+        'relations',
+        'views',
+        'warnings',
+        'errors',
+        'durationMs'
+      ]) &&
+      aerpSbSafeDenseArray_(schema.summary.errors) &&
+      schema.summary.errors.length === 0
     );
-
-    aerpBuildStep(sheet, 'Metadata Builder', '⏳ RUNNING', 'Construyendo modelo...', globalStart);
-    const metadataModel = aerpBuildMetadataModel();
-
-    if (metadataModel.summary.errors.length > 0) {
-      aerpBuildStep(
-        sheet,
-        'Metadata Builder',
-        '❌ ERROR',
-        metadataModel.summary.errors.join(' | '),
-        globalStart
-      );
-      throw new Error('Metadata Builder generó errores.');
-    }
-
-    aerpBuildStep(
-      sheet,
-      'Metadata Builder',
-      '✅ OK',
-      metadataModel.summary.tables + ' tablas procesadas',
-      globalStart
-    );
-
-    aerpBuildStep(sheet, 'Generator Engine', '⏳ RUNNING', 'Generando objetos...', globalStart);
-    const generator = aerpBuildGeneratorEngineMVP();
-
-    aerpBuildStep(
-      sheet,
-      'Generator Engine',
-      '✅ OK',
-      generator.summary.tables + ' tablas, ' + generator.summary.views + ' vistas',
-      globalStart
-    );
-
-    aerpBuildStep(sheet, 'AppSheet Package', '⏳ RUNNING', 'Construyendo package...', globalStart);
-    packageResult = aerpBuildAppSheetPackage();
-
-    if (!packageResult.ok) {
-      aerpBuildStep(
-        sheet,
-        'AppSheet Package',
-        '❌ ERROR',
-        packageResult.errors.join(' | '),
-        globalStart
-      );
-      throw new Error('AppSheet Package inválido.');
-    }
-
-    aerpBuildStep(
-      sheet,
-      'AppSheet Package',
-      '✅ OK',
-      packageResult.summary.tables + ' tablas listas para AppSheet',
-      globalStart
-    );
-
-    aerpBuildStep(sheet, 'Deployment', '⏳ RUNNING', 'Registrando resultado...', globalStart);
-    aerpWriteDeploymentLog_(packageResult, globalStart);
-    aerpWriteAppSheetPackageSummary_(packageResult);
-
-    aerpBuildStep(sheet, 'Deployment', '✅ OK', 'ERP generado correctamente', globalStart);
-
-    aerpBuildPipelineSummary_(sheet, packageResult, globalStart);
-
-    return {
-      ok: true,
-      message: 'Alef ERP generado correctamente.',
-      summary: packageResult.summary,
-      warnings: packageResult.warnings
-    };
-  } catch (error) {
-    aerpBuildStep(sheet, 'Pipeline', '❌ ERROR', error.message, globalStart);
-
-    throw error;
+  } catch (_error) {
+    return false;
   }
 }
 
-function aerpBuildPipelineSummary_(sheet, packageResult, start) {
+function aerpValidateFrozenSingleBuildBundle_(bundle) {
+  try {
+    if (!aerpSbpIsDeepFrozen_(bundle) || !aerpSbValidateArtifactsShape_(bundle)) return false;
+    const metadataModel = bundle.metadataModel;
+    const generatorResult = bundle.generatorResult;
+    const appSheetResult = bundle.appSheetResult;
+    if (
+      !aerpGenValidateMetadataModel_(metadataModel) ||
+      !aerpGenValidateBuiltResult_(generatorResult, metadataModel) ||
+      !aerpAsgValidateGeneratorResult_(generatorResult) ||
+      !aerpAsgValidateBuiltResult_(appSheetResult) ||
+      !aerpAsgValidateBuiltPackage_(appSheetResult.package, generatorResult) ||
+      !aerpSbValidateCrossArtifactSummary_(bundle)
+    ) {
+      return false;
+    }
+    const lineage = aerpBuildMetadataLineage_(metadataModel);
+    return Boolean(
+      aerpIsValidMetadataLineage_(lineage) &&
+      aerpMetadataLineageEquals_(lineage, bundle.lineage) &&
+      aerpMetadataLineageEquals_(lineage, generatorResult.lineage) &&
+      aerpMetadataLineageEquals_(lineage, appSheetResult.lineage)
+    );
+  } catch (_error) {
+    return false;
+  }
+}
+
+function aerpSbpIsDeepFrozen_(source) {
+  if (source === null || typeof source !== 'object') return false;
+  const seen = new WeakSet();
+  const stack = [source];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (seen.has(current) || !Object.isFrozen(current)) return false;
+    seen.add(current);
+    if (Array.isArray(current)) {
+      if (Object.getPrototypeOf(current) !== Array.prototype) return false;
+    } else if (Object.getPrototypeOf(current) !== Object.prototype) {
+      return false;
+    }
+    const keys = Reflect.ownKeys(current);
+    if (Array.isArray(current)) {
+      if (keys.length !== current.length + 1 || keys[keys.length - 1] !== 'length') return false;
+    }
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      if (key === 'length' && Array.isArray(current)) continue;
+      if (typeof key !== 'string') return false;
+      if (Array.isArray(current) && key !== String(index)) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) return false;
+      const value = descriptor.value;
+      if (value !== null && typeof value === 'object') stack.push(value);
+      else if (
+        value !== null &&
+        typeof value !== 'string' &&
+        typeof value !== 'boolean' &&
+        !(typeof value === 'number' && Number.isFinite(value))
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function aerpRunBuildPipeline() {
+  let lock = null;
+  let acquired = false;
+  try {
+    lock = LockService.getDocumentLock();
+    acquired = lock.tryLock(AERP_OPERATIONAL_LOCK_TIMEOUT_MS_);
+    if (!acquired) return aerpPipelineLockFailureResponse_('PIPELINE_LOCK_BUSY', 'BUILD_BUSY');
+    return aerpRunBuildPipelineLocked_(lock);
+  } catch (_error) {
+    return aerpPipelineLockFailureResponse_('PIPELINE_LOCK_FAILED', 'BUILD_LOCK_FAILED');
+  } finally {
+    if (acquired && lock) {
+      try {
+        lock.releaseLock();
+      } catch (_error) {
+        // Best effort: never replace the already sanitized Pipeline result.
+      }
+    }
+  }
+}
+
+function aerpRunBuildPipelineLocked_(lock) {
+  if (!lock || typeof lock.hasLock !== 'function' || lock.hasLock() !== true) {
+    return aerpPipelineLockFailureResponse_('PIPELINE_LOCK_FAILED', 'BUILD_LOCK_FAILED');
+  }
+  let sheet = null;
+  let deploymentReceipt = null;
+  let failureCode = 'PIPELINE_INTERNAL_ERROR';
+  let globalStart = new Date();
+  try {
+    const monitor = aerpStartBuildMonitor();
+    sheet = monitor.sheet;
+    globalStart = monitor.start;
+    aerpBuildStep(sheet, 'Installer', '⏳ RUNNING', 'Validando instalación...', globalStart);
+    const install = aerpInstallCheck();
+
+    if (!install || install.ok !== true) {
+      failureCode = 'PIPELINE_INSTALLATION_FAILED';
+      throw new Error(failureCode);
+    }
+
+    aerpBuildStep(sheet, 'Installer', 'VALIDADO', 'Instalación validada', globalStart);
+
+    aerpBuildStep(sheet, 'FrameworkSchema', '⏳ RUNNING', 'Construyendo schema...', globalStart);
+    const frameworkSchema = aerpBuildFrameworkSchema();
+    if (!aerpPipelineFrameworkSchemaReady_(frameworkSchema)) {
+      failureCode = 'PIPELINE_SCHEMA_FAILED';
+      throw new Error(failureCode);
+    }
+    aerpBuildStep(sheet, 'FrameworkSchema', 'VALIDADO', 'Schema validado', globalStart);
+    aerpBuildStep(sheet, 'Single Build', '⏳ RUNNING', 'Construyendo artefactos...', globalStart);
+    const bundle = aerpBuildSingleMetadataArtifactsFromFrameworkSchema(frameworkSchema);
+    if (!bundle || bundle.ok !== true) {
+      failureCode = 'PIPELINE_BUNDLE_FAILED';
+      throw new Error(failureCode);
+    }
+    if (!aerpValidateFrozenSingleBuildBundle_(bundle)) {
+      failureCode = 'PIPELINE_VALIDATION_FAILED';
+      throw new Error(failureCode);
+    }
+    aerpBuildStep(sheet, 'Single Build', 'VALIDADO', 'Bundle validado', globalStart);
+
+    aerpBuildStep(sheet, 'Deployment', '⏳ RUNNING', 'Registrando resultado...', globalStart);
+    failureCode = 'PIPELINE_WRITE_FAILED';
+    deploymentReceipt = aerpWriteDeploymentLog_(bundle, globalStart);
+    aerpWriteAppSheetPackageSummary_(bundle);
+    aerpBuildStep(
+      sheet,
+      'Deployment',
+      'LISTO_PARA_CONFIRMAR',
+      'Escrituras operativas preparadas',
+      globalStart
+    );
+    aerpBuildPipelineSummary_(sheet, bundle, globalStart);
+    aerpFinalizeDeploymentLog_(deploymentReceipt, 'OK', globalStart);
+    return aerpPipelineSuccessResponse_(bundle, globalStart);
+  } catch (_error) {
+    aerpPipelineStepBestEffort_(sheet, 'Pipeline', 'ERROR', failureCode, globalStart);
+    if (deploymentReceipt) {
+      try {
+        aerpFinalizeDeploymentLog_(deploymentReceipt, 'ERROR', globalStart);
+      } catch (_ignored) {
+        // Best effort only; the public failure remains sanitized.
+      }
+    }
+    return aerpPipelineFailureResponse_(failureCode);
+  }
+}
+
+function aerpPipelineSuccessResponse_(bundle, start) {
+  const source = bundle.summary;
+  return {
+    ok: true,
+    message: 'Alef ERP generado correctamente.',
+    summary: {
+      contractVersion: source.contractVersion,
+      tables: source.tables,
+      columns: source.columns,
+      primaryKeys: source.primaryKeys,
+      foreignKeys: source.foreignKeys,
+      labels: source.labels,
+      forms: source.forms,
+      views: source.views,
+      menus: source.menus,
+      warnings: 0,
+      errors: 0,
+      durationMs: new Date() - start
+    },
+    warnings: []
+  };
+}
+
+function aerpPipelineFailureResponse_(code) {
+  const safeCode = Object.prototype.hasOwnProperty.call(AERP_OPERATIONAL_PIPELINE_MESSAGES_, code)
+    ? code
+    : 'PIPELINE_INTERNAL_ERROR';
+  return {
+    ok: false,
+    message: AERP_OPERATIONAL_PIPELINE_MESSAGES_[safeCode],
+    summary: {},
+    warnings: []
+  };
+}
+
+function aerpPipelineLockFailureResponse_(code, status) {
+  return {
+    ok: false,
+    status,
+    message: AERP_OPERATIONAL_PIPELINE_MESSAGES_[code],
+    summary: {},
+    warnings: []
+  };
+}
+
+function aerpPipelineStepBestEffort_(sheet, step, status, message, start) {
+  try {
+    if (sheet) aerpBuildStep(sheet, step, status, message, start);
+  } catch (_error) {
+    // Operational telemetry must not expose or replace the sanitized result.
+  }
+}
+
+function aerpBuildPipelineSummary_(sheet, bundle, start) {
+  if (!aerpValidateFrozenSingleBuildBundle_(bundle)) {
+    throw new Error('AERP_PIPELINE_BUNDLE_INVALID');
+  }
+  const packageResult = bundle.appSheetResult;
   const row = sheet.getLastRow() + 2;
 
   sheet.getRange(row, 1).setValue('🚀 ALEF ERP BUILD SUMMARY');
@@ -342,7 +485,7 @@ function aerpBuildPipelineSummary_(sheet, packageResult, start) {
     .setFontColor('#FFFFFF');
 
   const data = [
-    ['Estado', 'COMPLETADO'],
+    ['Estado', 'LISTO_PARA_CONFIRMAR'],
     ['Versión', AERP_VERSION],
     ['Tablas', packageResult.summary.tables],
     ['Columnas', packageResult.summary.columns],

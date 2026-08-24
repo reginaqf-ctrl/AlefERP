@@ -371,9 +371,27 @@ Failure uses `SBV_ARTIFACTS_INVALID`, `lineage:null`, all three artifact fields 
 
 This API is distinct from physical `runAlefERPDryRun()`. The physical DryRun continues to inspect Sheets and compare scanned metadata with `CORE_COLUMNAS`; it is never called by the in-memory bundle.
 
-## 13. Phase 2A effect boundary
+## 13. Phase 2B operational orchestration
 
-Phase 2A does not connect `aerpRunBuildPipeline()` to the bundle. The current operational calls, monitoring and writes remain unchanged until Phase 2B.
+`aerpRunBuildPipeline()` is the sole production orchestrator and the sole owner of the operational `DocumentLock` for Generar ERP. It attempts that lock for exactly 5000 ms. Contention fails closed as `BUILD_BUSY`; lock infrastructure failure or invocation of the internal locked helper without ownership fails closed as `BUILD_LOCK_FAILED`. Neither case initializes monitoring, constructs artifacts or writes Sheets. The lock is released exactly once by the public wrapper after every acquired-lock outcome. No adapter or workflow acquires a nested lock.
+
+The internal `aerpRunBuildPipelineLocked_(lock)` assumes and verifies ownership. Its exact nominal sequence is: operational monitor initialization, `aerpInstallCheck()` once, `aerpBuildFrameworkSchema()` once, `aerpBuildSingleMetadataArtifactsFromFrameworkSchema()` once, final validation of the frozen bundle, pending deployment log, AppSheet package write, non-final monitor state `LISTO_PARA_CONFIRMAR`, build summary state `LISTO_PARA_CONFIRMAR`, and final deployment-log success marking. Intermediate successful stages use `VALIDADO`, never `OK` or `COMPLETADO`. That final deployment-log `OK` transition is the authoritative evidence of completion and the last Sheet write in a successful execution. `AERP_BUILD` is telemetry only and never proves successful deployment by itself. The single-build call constructs MetadataModel, Generator and AppSheet and invokes in-memory artifact validation exactly once each.
+
+Pipeline does not invoke physical DryRun, `aerpGenerate()`, or the reconstructive public MetadataModel, Generator and AppSheet wrappers. It never writes `CORE_COLUMNAS`. Metadata synchronization remains the explicit and separate `runSincronizarMetadata()` action.
+
+`runGenerarERP()` is a compatibility adapter over Pipeline. It neither constructs artifacts, performs writes nor acquires a lock. `menuGenerarERP()` remains compatible through this adapter without changes to the menu module.
+
+`aerpRunBuildWorkflow()` delegates all operational work exactly once to Pipeline and does not acquire a lock itself. Workflow performs no metadata rebuild, package write, deployment-log write or build-summary write. On success, `metadata` is exactly `{ tables, columns, primaryKeys, foreignKeys, labels }`, copied from the sanitized Pipeline summary produced from the same validated bundle. On failure, `metadata` is `null`.
+
+The legacy entrypoints `runAlefERP()`, `runAlefERPRebuild()` and `runAlefERPUpdate()` are disabled fail-closed with `LEGACY_ENTRYPOINT_DISABLED`; they do not generate metadata, invoke Pipeline or write Sheets. This is an intentional fail-closed security migration. Before Phase 2B is activated in an environment, installed triggers and external invocations must be audited and migrated away from those names to the explicit approved entrypoint. `runSincronizarMetadata()` is the unique explicit production route for rebuilding `CORE_COLUMNAS`. The scanner-backed dry-run compatibility entry is read-only and is not a build or synchronization route.
+
+`12_DryRun.js` is the sole owner of the canonical `runAlefERPDryRun()` declaration. The scanner-backed legacy `aerpGenerate('dry-run')` entry remains available only as the unambiguous `runAlefERPScannerLegacyDryRun()` compatibility entry.
+
+Before the first deployment write, Pipeline requires a valid installation, a structurally valid FrameworkSchema, a successful frozen single-build bundle, exact lineage agreement, deep freezing and successful in-memory validation. `AERP_BUILD` may be initialized earlier solely as operational telemetry and cannot represent deployment success. Monitor messages and public failures use fixed sanitized codes or messages and never include business identifiers, fingerprints, private exceptions or stack traces.
+
+The deployment log is first written as `PENDING` and is marked `OK` only after the package, non-final monitor and build summary writes complete. A later write failure produces a sanitized failed result and best-effort `ERROR` marking; it never returns partial success. No Sheet write is permitted after a successful `OK` transition. Cross-sheet writes are not transactional, and complete rollback across `AERP_DEPLOY_LOG`, `AERP_APPSHEET_PACKAGE` and `AERP_BUILD` is outside Phase 2B.
+
+Public forms remain compatible: Pipeline returns `ok`, `message`, `summary` and `warnings`; Deployment returns `ok`, `status`, `message`, `summary`, `warnings`, `errors` and `durationMs`; Workflow returns those Deployment fields plus `metadata`. No full artifact is returned by these operational APIs.
 
 The pure APIs prohibit:
 
@@ -384,4 +402,4 @@ The pure APIs prohibit:
 - Logger, current timestamps, UUID generation, locks and properties;
 - caches, singletons and hidden persistent state.
 
-Phase 2B will connect the validated bundle to Pipeline, make Pipeline the single operational orchestrator, adapt Deployment and Workflow, remove Workflow metadata rebuild and resolve the duplicate `runAlefERPDryRun()` declaration. No Phase 2A API writes `CORE_COLUMNAS` or any operational sheet.
+Operational sharing uses only local variables. No cache, singleton, `PropertiesService` or mutable global state carries artifacts between stages or executions. The pure Phase 2A APIs remain free of operational effects.

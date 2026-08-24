@@ -2,138 +2,77 @@
  * ALEF ERP Framework
  * 17_DeploymentMVP.gs
  *
- * AERP-017 - Deployment MVP
- * Primer flujo "Generar ERP".
- * No crea AppSheet todavía. Genera el paquete y lo registra.
+ * AERP-017 / AERP-038B - Compatible deployment adapter and operational writers.
  */
 
-/**
- * Ejecuta la generación comercial usando la metadata
- * previamente sincronizada en CORE_COLUMNAS.
- */
 function runGenerarERP() {
   const start = new Date();
-  const monitor = aerpStartBuildMonitor();
-  const sheet = monitor.sheet;
-
   try {
-    aerpWorkflowBuildStep_(
-      sheet,
-      'Installer',
-      '⏳ RUNNING',
-      'Validando instalación...',
-      start
-    );
-
-    const install = aerpInstallCheck();
-
-    if (!install || !install.ok) {
-      throw new Error(
-        'La instalación de Alef ERP presenta errores.'
-      );
-    }
-
-    aerpWorkflowBuildStep_(
-      sheet,
-      'Installer',
-      '✅ OK',
-      'Instalación validada',
-      start
-    );
-
-    aerpWorkflowBuildStep_(
-      sheet,
-      'AppSheet Package',
-      '⏳ RUNNING',
-      'Generando aplicación desde CORE_COLUMNAS...',
-      start
-    );
-
-    const packageResult = aerpBuildAppSheetPackage();
-
-    if (!packageResult || !packageResult.ok) {
-      throw new Error(
-        'El paquete AppSheet no pudo generarse.'
-      );
-    }
-
-    aerpWorkflowBuildStep_(
-      sheet,
-      'AppSheet Package',
-      '✅ OK',
-      packageResult.summary.tables +
-        ' tablas, ' +
-        packageResult.summary.columns +
-        ' columnas',
-      start
-    );
-
-    aerpWorkflowBuildStep_(
-      sheet,
-      'Deployment',
-      '⏳ RUNNING',
-      'Registrando resultado...',
-      start
-    );
-
-    aerpWriteDeploymentLog_(packageResult, start);
-    aerpWriteAppSheetPackageSummary_(packageResult);
-
+    const pipelineResult = aerpRunBuildPipeline();
     const durationMs = new Date() - start;
-    packageResult.summary.durationMs = durationMs;
-
-    aerpWorkflowBuildStep_(
-      sheet,
-      'Deployment',
-      '✅ OK',
-      'ERP generado correctamente',
-      start
-    );
-
-    aerpBuildPipelineSummary_(
-      sheet,
-      packageResult,
-      start
-    );
-
+    if (!pipelineResult || pipelineResult.ok !== true) {
+      return aerpDeploymentFailureResponse_(durationMs);
+    }
     return {
       ok: true,
       status: 'SUCCESS',
       message: 'Alef ERP generado correctamente.',
-      summary: packageResult.summary,
-      warnings: packageResult.warnings || [],
+      summary: aerpDeploymentCopySummary_(pipelineResult.summary),
+      warnings: aerpDeploymentCopyStrings_(pipelineResult.warnings),
       errors: [],
-      durationMs: durationMs
+      durationMs
     };
-
-  } catch (error) {
-    aerpWorkflowBuildStep_(
-      sheet,
-      'Generar ERP',
-      '❌ ERROR',
-      error.message,
-      start
-    );
-
-    throw error;
+  } catch (_error) {
+    return aerpDeploymentFailureResponse_(new Date() - start);
   }
 }
-/**
- * Reconstruye CORE_COLUMNAS desde las tablas físicas.
- * Se ejecuta de forma independiente al botón Generar ERP.
- */
+
+function aerpDeploymentFailureResponse_(durationMs) {
+  const message = 'No fue posible completar la generación de Alef ERP.';
+  return {
+    ok: false,
+    status: 'FAILED',
+    message,
+    summary: {},
+    warnings: [],
+    errors: [message],
+    durationMs
+  };
+}
+
+function aerpDeploymentCopySummary_(summary) {
+  return {
+    contractVersion: summary.contractVersion,
+    tables: summary.tables,
+    columns: summary.columns,
+    primaryKeys: summary.primaryKeys,
+    foreignKeys: summary.foreignKeys,
+    labels: summary.labels,
+    forms: summary.forms,
+    views: summary.views,
+    menus: summary.menus,
+    warnings: summary.warnings,
+    errors: summary.errors,
+    durationMs: summary.durationMs
+  };
+}
+
+function aerpDeploymentCopyStrings_(values) {
+  return Array.isArray(values)
+    ? values.filter(function (value) {
+        return typeof value === 'string';
+      })
+    : [];
+}
+
+/** Explicit metadata synchronization remains separate from build/deployment. */
 function runSincronizarMetadata() {
   const start = new Date();
-
   try {
     const result = aerpGenerate(AERP_MODES.REBUILD);
-
     if (!result || Number(result.inserted || 0) === 0) {
-      throw new Error(
-        'La sincronización no escribió metadata en CORE_COLUMNAS.'
-      );
+      throw new Error('La sincronización no escribió metadata en CORE_COLUMNAS.');
     }
-
     return {
       ok: true,
       status: 'SUCCESS',
@@ -149,24 +88,27 @@ function runSincronizarMetadata() {
       warnings: result.warnings || [],
       errors: []
     };
-
   } catch (error) {
+    const message = error && error.message ? error.message : 'No fue posible sincronizar metadata.';
     return {
       ok: false,
       status: 'FAILED',
-      message: error.message,
+      message,
       summary: {},
       warnings: [],
-      errors: [error.message],
+      errors: [message],
       durationMs: new Date() - start
     };
   }
 }
 
-function aerpWriteDeploymentLog_(packageResult, start) {
+function aerpWriteDeploymentLog_(bundle, start) {
+  if (!aerpValidateFrozenSingleBuildBundle_(bundle)) {
+    throw new Error('AERP_DEPLOYMENT_BUNDLE_INVALID');
+  }
+  const packageResult = bundle.appSheetResult;
   const ss = aerpGetSpreadsheet();
   let sheet = ss.getSheetByName('AERP_DEPLOY_LOG');
-
   if (!sheet) {
     sheet = ss.insertSheet('AERP_DEPLOY_LOG');
     sheet.appendRow([
@@ -181,10 +123,9 @@ function aerpWriteDeploymentLog_(packageResult, start) {
       'DuracionMs'
     ]);
   }
-
   sheet.appendRow([
     new Date(),
-    packageResult.ok ? 'OK' : 'ERROR',
+    'PENDING',
     packageResult.summary.tables,
     packageResult.summary.columns,
     packageResult.summary.forms,
@@ -193,21 +134,26 @@ function aerpWriteDeploymentLog_(packageResult, start) {
     packageResult.warnings.length,
     new Date() - start
   ]);
+  return { sheet, row: sheet.getLastRow() };
 }
 
-function aerpWriteAppSheetPackageSummary_(packageResult) {
+function aerpFinalizeDeploymentLog_(receipt, status, start) {
+  if (!receipt || !receipt.sheet || !Number.isInteger(receipt.row) || receipt.row < 2) return;
+  receipt.sheet.getRange(receipt.row, 9).setValue(new Date() - start);
+  receipt.sheet.getRange(receipt.row, 2).setValue(status === 'OK' ? 'OK' : 'ERROR');
+}
+
+function aerpWriteAppSheetPackageSummary_(bundle) {
+  if (!aerpValidateFrozenSingleBuildBundle_(bundle)) {
+    throw new Error('AERP_DEPLOYMENT_BUNDLE_INVALID');
+  }
+  const packageResult = bundle.appSheetResult;
   const ss = aerpGetSpreadsheet();
   let sheet = ss.getSheetByName('AERP_APPSHEET_PACKAGE');
-
-  if (!sheet) {
-    sheet = ss.insertSheet('AERP_APPSHEET_PACKAGE');
-  }
-
+  if (!sheet) sheet = ss.insertSheet('AERP_APPSHEET_PACKAGE');
   sheet.clearContents();
-
   sheet.appendRow(['Seccion', 'ID', 'Nombre', 'Tabla', 'Tipo', 'Detalle']);
-
-  packageResult.package.tables.forEach(function(table) {
+  packageResult.package.tables.forEach(function (table) {
     sheet.appendRow([
       'TABLE',
       table.id,
@@ -217,38 +163,14 @@ function aerpWriteAppSheetPackageSummary_(packageResult) {
       'Key: ' + table.keyColumn + ' | Label: ' + table.labelColumn
     ]);
   });
-
-  packageResult.package.forms.forEach(function(form) {
-    sheet.appendRow([
-      'FORM',
-      form.id,
-      form.name,
-      form.table,
-      form.type,
-      form.columns.join(', ')
-    ]);
+  packageResult.package.forms.forEach(function (form) {
+    sheet.appendRow(['FORM', form.id, form.name, form.table, form.type, form.columns.join(', ')]);
   });
-
-  packageResult.package.views.forEach(function(view) {
-    sheet.appendRow([
-      'VIEW',
-      view.id,
-      view.name,
-      view.table,
-      view.type,
-      view.columns.join(', ')
-    ]);
+  packageResult.package.views.forEach(function (view) {
+    sheet.appendRow(['VIEW', view.id, view.name, view.table, view.type, view.columns.join(', ')]);
   });
-
-  packageResult.package.menus.forEach(function(menu) {
-    sheet.appendRow([
-      'MENU',
-      menu.id,
-      menu.name,
-      menu.table,
-      'Menu',
-      'View: ' + menu.view
-    ]);
+  packageResult.package.menus.forEach(function (menu) {
+    sheet.appendRow(['MENU', menu.id, menu.name, menu.table, 'Menu', 'View: ' + menu.view]);
   });
 }
 
@@ -256,4 +178,3 @@ function testGenerarERP() {
   const result = runGenerarERP();
   Logger.log(JSON.stringify(result, null, 2));
 }
-
