@@ -2,13 +2,15 @@
 
 ## 1. Executive summary
 
-The repository is **not structurally releasable**. The session recorded 299/299 passing tests, but the deployable surface is uncontrolled, global ownership is duplicated, the exact bundle is untested, executable gates are absent, and rollback coverage is incomplete.
+The repository is **not structurally releasable**. A prior non-reproducible session recorded 299/299, while the Phase 1 canonical test gate now establishes a reproducible 233/233 baseline. The deployable surface remains uncontrolled, global ownership is duplicated, the exact bundle is untested, remaining executable gates are absent, and rollback coverage is incomplete.
 
 Release disposition: **NO-GO**. AERP-039 may not proceed.
 
 ## 2. Evidence basis and limitation
 
-The **299 passed, 0 failed, 299 total** result was executed locally during the session on **2026-08-24** against commit `ef8b0ecc764a8429d2c3e46c2b47b91a30994090`. It is not yet reproducible or versioned through a canonical repository command and machine report. It is therefore informative baseline evidence, not a primary acceptance gate.
+The **299 passed, 0 failed, 299 total** result was executed locally during a prior session on **2026-08-24** against commit `ef8b0ecc764a8429d2c3e46c2b47b91a30994090`. It is retained exclusively as historical, non-reproducible session evidence and is not an acceptance baseline.
+
+Phase 1 now provides the canonical, reconciled, reproducible baseline: **233 passed, 0 failed, 233 total** through `npm test`. The command executes six explicit Node processes and writes sanitized JSON evidence to `.qa-output/test-evidence.json`. The historical difference is 66: `299 = 233 + 66`. This is compatible with a probable double count of the 66-test AERP-038A wrapper suite, but it is not proven by primary evidence.
 
 Repository facts were verified directly from the current files. Tool/runtime statements use the official references in section 8, consulted 2026-08-24.
 
@@ -51,15 +53,15 @@ The local harness does not prove the exact Apps Script artifact has zero collisi
 
 ### BLOCKER-05 — Quality gates are specified but not implemented (HIGH)
 
-There is no canonical `test:all`, global audit, bundle-manifest check, or exact-bundle test command. Current lint does not enforce zero warnings, and an unqualified `git diff --check` does not inventory untracked files. Required closure: implement and version every gate contract in the Engineering Standard, including `eslint . --max-warnings=0`, a resolved Git range, and separate untracked comparison.
+Phase 1 now provides canonical `npm test`/`test:all` execution and sanitized JSON evidence. The global audit, bundle-manifest check, and exact-bundle test commands remain absent. Current project-wide lint does not yet provide approved zero-warning evidence, and an unqualified `git diff --check` does not inventory untracked files. Required closure: complete joint review of Phase 1 and implement and version every remaining gate contract in the Engineering Standard, including `eslint . --max-warnings=0`, a resolved Git range, and separate untracked comparison.
 
 ### BLOCKER-06 — Rollback topology is incomplete (CRITICAL)
 
 Redirecting a versioned deployment does not establish recovery for HEAD execution, bound-script menus, custom functions, or simple/installable triggers. Required closure: identify topology and rehearse four separate recovery paths with post-recovery security tests.
 
-### BLOCKER-07 — Baseline evidence is not reproducible (HIGH)
+### BLOCKER-07 — Baseline gate awaits joint review (HIGH)
 
-The 299/299 session result lacks a canonical versioned command and repository report. Required closure: version the test inventory and command, produce a revision-bound report, and reconcile tests by identity and risk coverage.
+The historical 299/299 session result remains non-reproducible, but Phase 1 now has `npm test`, six explicit Node processes, exact suite inventory reconciliation, and sanitized revision-bound JSON evidence for the canonical 233/233 baseline. The executable Phase 1 gate is technically approved. Required closure: complete the joint code/document review and authorize staging; counts remain supporting evidence rather than a sole release criterion.
 
 ## 5. Risk register
 
@@ -75,17 +77,17 @@ The 299/299 session result lacks a canonical versioned command and repository re
 
 ## 6. Requirement traceability
 
-| Requirement                | Gate              | Future command/control                                     | Evidence                   | State   | Blocker |
-| -------------------------- | ----------------- | ---------------------------------------------------------- | -------------------------- | ------- | ------- |
-| One authorization contract | Contract/security | Targeted tests plus signed review                          | Contract and report        | Pending | 01      |
-| Zero global duplicates     | Global audit      | `npm run audit:globals`                                    | Full symbol inventory      | Pending | 01/02   |
-| Positive publication set   | Bundle manifest   | `npm run bundle:manifest:check`                            | Manifest/list/order/hashes | Pending | 03      |
-| Exact bundle behavior      | Artifact test     | `npm run test:bundle`                                      | Hash-bound report          | Pending | 04      |
-| Reproducible full suite    | Full suite        | `npm run test:all`                                         | Named test report          | Pending | 05/07   |
-| Zero lint warnings         | Lint              | `eslint . --max-warnings=0`                                | Tool log                   | Pending | 05      |
-| Range whitespace           | Diff              | `git diff --check <approved-base>...HEAD`                  | Resolved range/log         | Pending | 05      |
-| Untracked control          | Inventory         | `git ls-files --others --exclude-standard` plus comparison | Sorted approved list       | Pending | 05      |
-| Four recovery paths        | Rollback          | Controlled topology exercises                              | Recovery records           | Pending | 06      |
+| Requirement                | Gate              | Future command/control                                     | Evidence                   | State                                | Blocker |
+| -------------------------- | ----------------- | ---------------------------------------------------------- | -------------------------- | ------------------------------------ | ------- |
+| One authorization contract | Contract/security | Targeted tests plus signed review                          | Contract and report        | Pending                              | 01      |
+| Zero global duplicates     | Global audit      | `npm run audit:globals`                                    | Full symbol inventory      | Pending                              | 01/02   |
+| Positive publication set   | Bundle manifest   | `npm run bundle:manifest:check`                            | Manifest/list/order/hashes | Pending                              | 03      |
+| Exact bundle behavior      | Artifact test     | `npm run test:bundle`                                      | Hash-bound report          | Pending                              | 04      |
+| Reproducible full suite    | Full suite        | `npm test`                                                 | Named JSON test report     | Technical pass; joint review pending | 05/07   |
+| Zero lint warnings         | Lint              | `eslint . --max-warnings=0`                                | Tool log                   | Pending                              | 05      |
+| Range whitespace           | Diff              | `git diff --check <approved-base>...HEAD`                  | Resolved range/log         | Pending                              | 05      |
+| Untracked control          | Inventory         | `git ls-files --others --exclude-standard` plus comparison | Sorted approved list       | Pending                              | 05      |
+| Four recovery paths        | Rollback          | Controlled topology exercises                              | Recovery records           | Pending                              | 06      |
 
 ## 7. Closure rule
 

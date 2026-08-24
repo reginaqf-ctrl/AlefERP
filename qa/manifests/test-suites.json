@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0.0",
+  "canonicalNodeVersion": "24.18.0",
+  "informativeBaseline": {
+    "commit": "ef8b0ecc764a8429d2c3e46c2b47b91a30994090",
+    "date": "2026-08-24",
+    "total": 299,
+    "enforced": false
+  },
+  "reconciledBaseline": {
+    "total": 233,
+    "contractualThreshold": false,
+    "perSuite": {
+      "AERP-036_AuthorizationEngine.test.js": 14,
+      "AERP-038A_MetadataBuilderEnterprise.test.js": 40,
+      "AERP-038A_MetadataBuilderEnterpriseWrapper.test.js": 66,
+      "AERP-038B_SingleMetadataBuildConsumerIntegration.test.js": 51,
+      "AERP-038B_SingleMetadataBuildPipelineIntegration.test.js": 34,
+      "AERP-038B_SingleMetadataBuildOperationalIntegration.test.js": 28
+    }
+  },
+  "suites": [
+    "AERP-036_AuthorizationEngine.test.js",
+    "AERP-038A_MetadataBuilderEnterprise.test.js",
+    "AERP-038A_MetadataBuilderEnterpriseWrapper.test.js",
+    "AERP-038B_SingleMetadataBuildConsumerIntegration.test.js",
+    "AERP-038B_SingleMetadataBuildPipelineIntegration.test.js",
+    "AERP-038B_SingleMetadataBuildOperationalIntegration.test.js"
+  ]
+}
