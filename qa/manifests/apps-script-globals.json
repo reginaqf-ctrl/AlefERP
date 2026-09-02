@@ -1,0 +1,271 @@
+{
+  "schemaVersion": "1.0.0",
+  "canonicalNodeVersion": "24.18.0",
+  "includedFiles": [
+    {
+      "path": "01_Config.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Runtime configuration."
+    },
+    {
+      "path": "02_Utils.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Runtime utilities."
+    },
+    {
+      "path": "03_RuleEngine.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Rule engine."
+    },
+    {
+      "path": "04_ActionEngine.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Action engine."
+    },
+    {
+      "path": "05_MetadataScanner.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Metadata scanner."
+    },
+    {
+      "path": "06_MetadataValidator.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Metadata validator."
+    },
+    {
+      "path": "07_Writer.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Runtime writer."
+    },
+    {
+      "path": "08_Generator.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Runtime generator."
+    },
+    {
+      "path": "09_Tests.js",
+      "role": "ambiguous-embedded-tests",
+      "classification": "ambiguous",
+      "justification": "Embedded tests may enter the shared runtime."
+    },
+    {
+      "path": "10_Main.js",
+      "role": "legacy-adapter",
+      "classification": "productive",
+      "justification": "Legacy runtime adapter."
+    },
+    {
+      "path": "11_Installer.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Runtime installer."
+    },
+    {
+      "path": "12_DryRun.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Runtime dry-run support."
+    },
+    {
+      "path": "13_FrameworkSchema.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Framework schema."
+    },
+    {
+      "path": "14_MetadataBuilder.js",
+      "role": "legacy-adapter",
+      "classification": "productive",
+      "justification": "Legacy metadata adapter."
+    },
+    {
+      "path": "15_GeneratorEngine.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Generator engine."
+    },
+    {
+      "path": "16_AppSheetGenerator.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "AppSheet generator."
+    },
+    {
+      "path": "17_DeploymentMVP.js",
+      "role": "legacy-adapter",
+      "classification": "productive",
+      "justification": "Legacy deployment adapter."
+    },
+    {
+      "path": "18_Menu.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Runtime menu."
+    },
+    {
+      "path": "19_BuildMonitor.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Build monitor."
+    },
+    {
+      "path": "20_BuildPipeline.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Build pipeline."
+    },
+    {
+      "path": "21_BuildWorkflow.js",
+      "role": "legacy-adapter",
+      "classification": "productive",
+      "justification": "Legacy workflow adapter."
+    },
+    {
+      "path": "22_UIFoundation.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "UI foundation."
+    },
+    {
+      "path": "23_CommercialDashboard.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Commercial dashboard."
+    },
+    {
+      "path": "24_BuildReport.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Build report."
+    },
+    {
+      "path": "25_ProductBranding.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Product branding."
+    },
+    {
+      "path": "26_UIComponents.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "UI components."
+    },
+    {
+      "path": "30_DashboardEnterprise.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Enterprise dashboard."
+    },
+    {
+      "path": "31_DashboardHero.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Dashboard hero."
+    },
+    {
+      "path": "32_DashboardKPI.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Dashboard KPI."
+    },
+    {
+      "path": "33_LayoutEngine.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Layout engine."
+    },
+    {
+      "path": "34_LayoutFoundation.js",
+      "role": "legacy-adapter",
+      "classification": "productive",
+      "justification": "Legacy layout adapter."
+    },
+    {
+      "path": "35_SheetRenderer.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Sheet renderer."
+    },
+    {
+      "path": "36_AuthorizationEngine.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Legacy authorization runtime."
+    },
+    {
+      "path": "37_AuthorizationMetadataRepository.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Authorization metadata repository."
+    },
+    {
+      "path": "AERP-027_UITheme.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "UI theme runtime."
+    },
+    {
+      "path": "AERP-029_SheetRenderer.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Sheet renderer runtime."
+    },
+    {
+      "path": "AERP-036_AuthorizationEngine.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Enterprise authorization runtime."
+    },
+    {
+      "path": "AERP-038A_MetadataBuilderEnterprise.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Enterprise metadata builder."
+    }
+  ],
+  "excludedFiles": [
+    { "path": "AERP-036_AuthorizationEngine.test.js", "reason": "Canonical Node test suite." },
+    {
+      "path": "AERP-038A_MetadataBuilderEnterprise.test.js",
+      "reason": "Canonical Node test suite."
+    },
+    {
+      "path": "AERP-038A_MetadataBuilderEnterpriseWrapper.test.js",
+      "reason": "Canonical Node test suite."
+    },
+    {
+      "path": "AERP-038B_SingleMetadataBuildConsumerIntegration.test.js",
+      "reason": "Canonical Node test suite."
+    },
+    {
+      "path": "AERP-038B_SingleMetadataBuildOperationalIntegration.test.js",
+      "reason": "Canonical Node test suite."
+    },
+    {
+      "path": "AERP-038B_SingleMetadataBuildPipelineIntegration.test.js",
+      "reason": "Canonical Node test suite."
+    },
+    { "path": "eslint.config.js", "reason": "Node-only ESLint configuration." }
+  ],
+  "publicEntrypoints": ["aerpAuthorize"],
+  "policy": {
+    "exactCollision": "error",
+    "equivalentDuplicate": "error",
+    "incompatiblePublicEntrypoint": "critical",
+    "unicodeNormalizationCollision": "error",
+    "casefoldPublic": "error",
+    "casefoldPrivate": "warning",
+    "dynamicGlobal": "error",
+    "parseError": "error",
+    "nodeRuntimePattern": "error"
+  },
+  "exceptions": []
+}
