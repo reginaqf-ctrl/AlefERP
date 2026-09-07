@@ -41,7 +41,7 @@
  *   - aerpNormalizeAuthorizationModel(model)
  *   - aerpValidateAuthorizationContext(context)
  *   - aerpValidateAuthorizationModel(model)
- *   - aerpAuthorize(context, model)
+ *   - aerpAuthorizeEnterprise(context, model)
  *   - aerpCreateAuthorizationMetadataInput(input)
  *   - aerpBuildAuthorizationModel(metadataInput, options)
  *   - aerpValidateAuthorizationMetadataInput(metadataInput)
@@ -49,7 +49,7 @@
  * ============================================================
  */
 
-const AERP_AUTHORIZATION_VERSION = '1.0.0';
+const AERP_ENTERPRISE_AUTHORIZATION_VERSION = '1.0.0';
 const AERP_AUTHORIZATION_RULE_EFFECTS = Object.freeze(['ALLOW', 'DENY']);
 const AERP_AUTHORIZATION_COMPANY_SCOPES = Object.freeze(['COMPANY', 'TENANT']);
 
@@ -230,7 +230,8 @@ function aerpCreateFailClosedDecision_(validationIssues, modelVersion) {
     reasonCode: 'NOT_IMPLEMENTED',
     implemented: false,
     timestamp: new Date().toISOString(),
-    modelVersion: aerpNormalizeOptionalString_(modelVersion) || AERP_AUTHORIZATION_VERSION,
+    modelVersion:
+      aerpNormalizeOptionalString_(modelVersion) || AERP_ENTERPRISE_AUTHORIZATION_VERSION,
     matchedRuleIds: [],
     validationIssues: Array.isArray(validationIssues)
       ? validationIssues.map(issue => aerpNormalizeOptionalString_(issue)).filter(Boolean)
@@ -288,7 +289,8 @@ function aerpCreateAuthorizationDecision(decision) {
     timestamp:
       aerpNormalizeOptionalString_(decision && decision.timestamp) || new Date().toISOString(),
     modelVersion:
-      aerpNormalizeOptionalString_(decision && decision.modelVersion) || AERP_AUTHORIZATION_VERSION,
+      aerpNormalizeOptionalString_(decision && decision.modelVersion) ||
+      AERP_ENTERPRISE_AUTHORIZATION_VERSION,
     matchedRuleIds: Array.isArray(decision && decision.matchedRuleIds)
       ? decision.matchedRuleIds.map(ruleId => aerpNormalizeOptionalString_(ruleId)).filter(Boolean)
       : [],
@@ -388,7 +390,7 @@ function aerpValidateAuthorizationModel(model) {
   });
 }
 
-function aerpAuthorize(context, model) {
+function aerpAuthorizeEnterprise(context, model) {
   const contextValidation = aerpValidateAuthorizationContext(context);
   const modelValidation = aerpValidateAuthorizationModel(model);
 
@@ -946,7 +948,7 @@ function aerpBuildAuthorizationModel(metadataInput, options) {
     options && options.name ? aerpNormalizeOptionalString_(options.name) : 'AERP-036-METADATA';
 
   const model = {
-    modelVersion: AERP_AUTHORIZATION_VERSION,
+    modelVersion: AERP_ENTERPRISE_AUTHORIZATION_VERSION,
     generatedAt: new Date().toISOString(),
     rolesByUser,
     modulesByRole,
@@ -959,7 +961,7 @@ function aerpBuildAuthorizationModel(metadataInput, options) {
       defaultEffect: AERP_AUTHORIZATION_EFFECTS.DENY,
       failClosed: true,
       allowImplicit: false,
-      modelVersion: AERP_AUTHORIZATION_VERSION
+      modelVersion: AERP_ENTERPRISE_AUTHORIZATION_VERSION
     },
     validationState,
     metadataDiagnostics: diagnostics,
@@ -1000,13 +1002,13 @@ globalThis.aerpCreateAuthorizationValidationResult = aerpCreateAuthorizationVali
 globalThis.aerpNormalizeAuthorizationModel = aerpNormalizeAuthorizationModel;
 globalThis.aerpValidateAuthorizationContext = aerpValidateAuthorizationContext;
 globalThis.aerpValidateAuthorizationModel = aerpValidateAuthorizationModel;
-globalThis.aerpAuthorize = aerpAuthorize;
+globalThis.aerpAuthorizeEnterprise = aerpAuthorizeEnterprise;
 globalThis.aerpCreateAuthorizationMetadataInput = aerpCreateAuthorizationMetadataInput;
 globalThis.aerpBuildAuthorizationModel = aerpBuildAuthorizationModel;
 globalThis.aerpValidateAuthorizationMetadataInput = aerpValidateAuthorizationMetadataInput;
 globalThis.aerpGetAuthorizationMetadataDiagnostics = aerpGetAuthorizationMetadataDiagnostics;
 
-globalThis.AERP_AUTHORIZATION_VERSION = AERP_AUTHORIZATION_VERSION;
+globalThis.AERP_ENTERPRISE_AUTHORIZATION_VERSION = AERP_ENTERPRISE_AUTHORIZATION_VERSION;
 globalThis.AERP_AUTHORIZATION_RULE_EFFECTS = AERP_AUTHORIZATION_RULE_EFFECTS;
 globalThis.AERP_AUTHORIZATION_COMPANY_SCOPES = AERP_AUTHORIZATION_COMPANY_SCOPES;
 globalThis.AERP_AUTHORIZATION_EFFECTS = AERP_AUTHORIZATION_EFFECTS;

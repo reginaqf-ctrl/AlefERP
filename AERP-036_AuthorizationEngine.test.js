@@ -1,9 +1,150 @@
-/* global require */
+/* global __dirname, require */
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 
 require('./AERP-036_AuthorizationEngine');
+
+const CONSOLIDATED_RUNTIME_FILES = Object.freeze([
+  '04_ActionEngine.js',
+  '07_Writer.js',
+  '36_AuthorizationEngine.js',
+  '37_AuthorizationMetadataRepository.js',
+  'AERP-036_AuthorizationEngine.js'
+]);
+
+function readConsolidatedRuntimeFile(fileName) {
+  return fs.readFileSync(path.join(__dirname, fileName), 'utf8');
+}
+
+function buildConsolidatedAuthorizationRuntime() {
+  const context = vm.createContext({
+    console,
+    Date,
+    JSON,
+    Object,
+    Array,
+    String,
+    Number,
+    Boolean,
+    Math,
+    RegExp,
+    Error,
+    TypeError,
+    Set,
+    Map,
+    Proxy
+  });
+
+  const source = CONSOLIDATED_RUNTIME_FILES.map(fileName =>
+    readConsolidatedRuntimeFile(fileName)
+  ).join('\n;\n');
+
+  vm.runInContext(source, context, {
+    filename: 'AERP-039-combined-authorization-runtime.js',
+    timeout: 5000
+  });
+
+  return context;
+}
+
+function buildSheetRendererRuntime() {
+  const context = vm.createContext({
+    console,
+    Date,
+    JSON,
+    Object,
+    Array,
+    String,
+    Number,
+    Boolean,
+    Math,
+    RegExp,
+    Error,
+    TypeError,
+    aerpRenderDashboardHero() {},
+    aerpRenderDashboardKpi() {},
+    aerpCreateDashboardHeroSpecification() {},
+    aerpCreateDashboardKpiSpecification() {},
+    aerpCalculateDashboardLayout() {}
+  });
+
+  vm.runInContext(readConsolidatedRuntimeFile('35_SheetRenderer.js'), context, {
+    filename: '35_SheetRenderer.js',
+    timeout: 5000
+  });
+
+  return context;
+}
+
+test('loads the consolidated runtime without global declaration collisions', () => {
+  const runtime = buildConsolidatedAuthorizationRuntime();
+
+  assert.equal(typeof runtime.aerpAuthorize, 'function');
+  assert.equal(typeof runtime.aerpAuthorizeEnterprise, 'function');
+  assert.notEqual(runtime.aerpAuthorize, runtime.aerpAuthorizeEnterprise);
+});
+
+test('keeps request/options authorization as the canonical public API', () => {
+  const runtime = buildConsolidatedAuthorizationRuntime();
+  const decision = runtime.aerpAuthorize({}, { rules: [] });
+
+  assert.equal(decision.decision, 'DENY');
+  assert.equal(decision.reason, 'INVALID_REQUEST');
+  assert.equal(decision.allowed, false);
+});
+
+test('keeps enterprise context/model authorization named and fail-closed', () => {
+  const runtime = buildConsolidatedAuthorizationRuntime();
+  const decision = runtime.aerpAuthorizeEnterprise({}, {});
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.decisionType, 'DENY');
+  assert.equal(decision.implemented, false);
+});
+
+test('keeps exactly one productive aerpMetadataToRow declaration', () => {
+  const owners = ['04_ActionEngine.js', '07_Writer.js'].filter(fileName =>
+    /function\s+aerpMetadataToRow\s*\(/u.test(readConsolidatedRuntimeFile(fileName))
+  );
+
+  assert.deepEqual(owners, ['07_Writer.js']);
+});
+
+test('contains no productive eval calls in the Apps Script runtime inventory', () => {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(__dirname, 'qa/manifests/apps-script-globals.json'), 'utf8')
+  );
+  const owners = manifest.includedFiles
+    .map(item => item.path)
+    .filter(fileName => /\beval\s*\(/u.test(readConsolidatedRuntimeFile(fileName)));
+
+  assert.deepEqual(owners, []);
+});
+
+test('resolves only explicitly registered sheet renderer functions and factories', () => {
+  const runtime = buildSheetRendererRuntime();
+
+  assert.equal(
+    runtime.aerpResolveSheetRendererFunction_('aerpRenderDashboardHero'),
+    runtime.aerpRenderDashboardHero
+  );
+  assert.equal(
+    runtime.aerpResolveSpecificationFactory_('aerpCreateDashboardKpiSpecification'),
+    runtime.aerpCreateDashboardKpiSpecification
+  );
+  assert.throws(
+    () => runtime.aerpResolveSheetRendererFunction_('unregisteredRenderer'),
+    /not available/u
+  );
+  assert.throws(
+    () => runtime.aerpResolveSpecificationFactory_('unregisteredFactory'),
+    /not available/u
+  );
+});
 
 test('creates normalized authorization contracts', () => {
   const context = globalThis.aerpCreateAuthorizationContext({
@@ -124,7 +265,7 @@ test('rejects an invalid company scope', () => {
 });
 
 test('fails closed for incomplete authorization entry points', () => {
-  const decision = globalThis.aerpAuthorize(
+  const decision = globalThis.aerpAuthorizeEnterprise(
     {
       userId: 'user-1',
       companyId: 'company-7',

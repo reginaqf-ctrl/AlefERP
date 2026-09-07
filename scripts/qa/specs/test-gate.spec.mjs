@@ -1075,15 +1075,15 @@ test('parseReporterResult rejects missing and duplicate bounded results', () => 
   );
 });
 
-test('aggregates exactly 14 + 40 + 66 + 51 + 34 + 28 = 233', () => {
+test('aggregates exactly 20 + 40 + 66 + 51 + 34 + 28 = 239', () => {
   const results = SUITES.map(([suitePath, total]) => suiteResult(suitePath, total));
   const counts = aggregateSuiteResults(
     SUITES.map(([suitePath]) => suitePath),
     results,
     baseline()
   );
-  assert.equal(counts.total, 14 + 40 + 66 + 51 + 34 + 28);
-  assert.equal(counts.total, 233);
+  assert.equal(counts.total, 20 + 40 + 66 + 51 + 34 + 28);
+  assert.equal(counts.total, 239);
 });
 
 test('aggregation rejects missing, duplicate, incomplete, incompatible, and inconsistent results', () => {
@@ -1098,7 +1098,7 @@ test('aggregation rejects missing, duplicate, incomplete, incompatible, and inco
     () =>
       aggregateSuiteResults(
         declared,
-        [suiteResult(declared[0], 14, { completed: false }), ...results.slice(1)],
+        [suiteResult(declared[0], SUITES[0][1], { completed: false }), ...results.slice(1)],
         baseline()
       ),
     /INCOMPLETE/
@@ -1107,7 +1107,7 @@ test('aggregation rejects missing, duplicate, incomplete, incompatible, and inco
     () =>
       aggregateSuiteResults(
         declared,
-        [suiteResult(declared[0], 14, { exitCode: 1 }), ...results.slice(1)],
+        [suiteResult(declared[0], SUITES[0][1], { exitCode: 1 }), ...results.slice(1)],
         baseline()
       ),
     /EXIT_SUMMARY/
@@ -1116,7 +1116,7 @@ test('aggregation rejects missing, duplicate, incomplete, incompatible, and inco
     () =>
       aggregateSuiteResults(
         declared,
-        [suiteResult(declared[0], 13), ...results.slice(1)],
+        [suiteResult(declared[0], SUITES[0][1] - 1), ...results.slice(1)],
         baseline()
       ),
     /SUITE_TOTAL/

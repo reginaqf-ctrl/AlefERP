@@ -875,34 +875,19 @@ test('directory, recovery, cleanup and total persistence failures are classified
   assert.deepEqual(await readdir(path.join(item.root, '.qa-output')), []);
 });
 
-test('real repository reports exactly the three known blocking symbols', async () => {
+test('real repository has no global collisions or dynamic-code blockers', async () => {
   const root = path.resolve(
     path.dirname(new URL(import.meta.url).pathname.replace(/^\/(.:)/, '$1')),
     '../../..'
   );
   const evidence = await runGlobalsGate({ root, persist: false });
-  assert.equal(evidence.exitCode, 1);
+  assert.equal(evidence.exitCode, 0);
   assert.equal(evidence.counts.includedFiles, 38);
   assert.equal(evidence.counts.excludedFiles, 7);
-  assert.equal(evidence.counts.uniqueSymbols, 758);
-  assert.equal(evidence.counts.occurrences, 781);
-  assert.deepEqual(
-    evidence.collisions
-      .filter(item => item.severity !== 'warning')
-      .map(item => item.symbol)
-      .sort(),
-    ['AERP_AUTHORIZATION_VERSION', 'aerpAuthorize', 'aerpMetadataToRow'].sort()
-  );
-  assert.deepEqual(
-    evidence.dynamicConstructions.map(item => `${item.file}:${item.line}:${item.code}`),
-    [
-      '26_UIComponents.js:1565:DYNAMIC_CODE',
-      '30_DashboardEnterprise.js:2108:DYNAMIC_CODE',
-      '31_DashboardHero.js:512:DYNAMIC_CODE',
-      '32_DashboardKPI.js:710:DYNAMIC_CODE',
-      '35_SheetRenderer.js:498:DYNAMIC_CODE',
-      '35_SheetRenderer.js:884:DYNAMIC_CODE',
-      '35_SheetRenderer.js:930:DYNAMIC_CODE'
-    ]
-  );
+  assert.equal(evidence.counts.uniqueSymbols, 760);
+  assert.equal(evidence.counts.occurrences, 780);
+  assert.equal(evidence.counts.duplicateSymbols, 0);
+  assert.equal(evidence.counts.dynamicConstructions, 0);
+  assert.deepEqual(evidence.collisions, []);
+  assert.deepEqual(evidence.dynamicConstructions, []);
 });

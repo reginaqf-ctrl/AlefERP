@@ -8,10 +8,10 @@
     "enforced": false
   },
   "reconciledBaseline": {
-    "total": 233,
+    "total": 239,
     "contractualThreshold": false,
     "perSuite": {
-      "AERP-036_AuthorizationEngine.test.js": 14,
+      "AERP-036_AuthorizationEngine.test.js": 20,
       "AERP-038A_MetadataBuilderEnterprise.test.js": 40,
       "AERP-038A_MetadataBuilderEnterpriseWrapper.test.js": 66,
       "AERP-038B_SingleMetadataBuildConsumerIntegration.test.js": 51,

@@ -145,15 +145,6 @@ function aerpInferReferenceTableBySuffix(suffix) {
   return '';
 }
 
-function aerpMetadataToRow(metadata, headers) {
-  return headers.map(header => {
-    const key = String(header).trim();
-    return Object.prototype.hasOwnProperty.call(metadata, key)
-      ? metadata[key]
-      : '';
-  });
-}
-
 function testActionEngine() {
   const metadata = aerpBuildColumnMetadata('CAT_ESTADOS', 'ID_Estado', 1);
   Logger.log(JSON.stringify(metadata, null, 2));

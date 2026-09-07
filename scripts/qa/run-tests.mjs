@@ -711,7 +711,7 @@ export function aggregateSuiteResults(declared, perSuite, reconciledBaseline) {
     }
     for (const key of Object.keys(counts)) counts[key] += suite[key];
   }
-  if (counts.total !== reconciledBaseline.total || counts.total !== 233) {
+  if (counts.total !== reconciledBaseline.total) {
     throw new GateError('aggregation', 'RECONCILED_TOTAL_MISMATCH');
   }
   return counts;

@@ -25,15 +25,12 @@
  * ============================================================
  */
 
-
 /* ============================================================
  * 1. MODULE CONSTANTS
  * ============================================================
  */
 
-const AERP_DASHBOARD_HERO_VERSION =
-  '1.0.0';
-
+const AERP_DASHBOARD_HERO_VERSION = '1.0.0';
 
 /* ============================================================
  * 2. PUBLIC API
@@ -46,70 +43,39 @@ const AERP_DASHBOARD_HERO_VERSION =
  * @param {Object} metrics Commercial Dashboard metrics.
  * @return {Object} Hero specification.
  */
-function aerpCreateDashboardHeroSpecification(
-  metrics
-) {
-  if (
-    !metrics ||
-    typeof metrics !== 'object'
-  ) {
-    throw new Error(
-      '[AERP-031] Dashboard metrics are required.'
-    );
+function aerpCreateDashboardHeroSpecification(metrics) {
+  if (!metrics || typeof metrics !== 'object') {
+    throw new Error('[AERP-031] Dashboard metrics are required.');
   }
 
-  const successfulBuild =
-    String(metrics.status || '')
-      .toUpperCase() ===
-    'BUILD EXITOSO';
+  const successfulBuild = String(metrics.status || '').toUpperCase() === 'BUILD EXITOSO';
 
   return {
     id: 'enterprise-dashboard-hero',
 
-    product:
-      AERP_BRAND.PRODUCT,
+    product: AERP_BRAND.PRODUCT,
 
-    edition:
-      AERP_BRAND.EDITION,
+    edition: AERP_BRAND.EDITION,
 
-    engine:
-      AERP_BRAND.ENGINE_NAME,
+    engine: AERP_BRAND.ENGINE_NAME,
 
-    status:
-      metrics.status,
+    status: metrics.status,
 
-    statusLabel:
-  successfulBuild
-    ? 'BUILD OK'
-    : 'BUILD ERROR',
+    statusLabel: successfulBuild ? 'BUILD OK' : 'BUILD ERROR',
 
-   statusIcon:
-  successfulBuild
-    ? '🟢'
-    : '⚠️',
+    statusIcon: successfulBuild ? '🟢' : '⚠️',
 
-    tables:
-      metrics.tables,
+    tables: metrics.tables,
 
-    columns:
-      metrics.columns,
+    columns: metrics.columns,
 
-    duration:
-      aerpFormatDuration_(
-        metrics.durationMs
-      ),
+    duration: aerpFormatDuration_(metrics.durationMs),
 
-    buildId:
-      metrics.buildId ||
-      'No disponible',
+    buildId: metrics.buildId || 'No disponible',
 
-    lastBuild:
-      aerpFormatDashboardDate_(
-        metrics.lastBuildDate
-      )
+    lastBuild: aerpFormatDashboardDate_(metrics.lastBuildDate)
   };
 }
-
 
 /**
  * Renders the Enterprise Hero section.
@@ -118,38 +84,23 @@ function aerpCreateDashboardHeroSpecification(
  * @param {Object} hero Hero specification.
  * @return {Object} Rendered ranges.
  */
-function aerpRenderDashboardHero(
-  sheet,
-  hero
-) {
+function aerpRenderDashboardHero(sheet, hero) {
   if (!sheet) {
-    throw new Error(
-      '[AERP-031] A valid sheet is required.'
-    );
+    throw new Error('[AERP-031] A valid sheet is required.');
   }
 
-  if (
-    !hero ||
-    typeof hero !== 'object'
-  ) {
-    throw new Error(
-      '[AERP-031] Hero specification is required.'
-    );
+  if (!hero || typeof hero !== 'object') {
+    throw new Error('[AERP-031] Hero specification is required.');
   }
 
-  const theme =
-    aerpGetTheme();
+  const theme = aerpGetTheme();
 
-  const layout =
-    aerpGetDashboardHeroLayout_();
+  const layout = aerpGetDashboardHeroLayout_();
 
   /*
    * Main surface.
    */
-  const heroRange =
-    sheet.getRange(
-      layout.surface
-    );
+  const heroRange = sheet.getRange(layout.surface);
 
   heroRange.breakApart();
   heroRange.clear();
@@ -157,215 +108,98 @@ function aerpRenderDashboardHero(
   /*
    * Title region.
    */
-  const titleRange =
-    sheet.getRange(
-      layout.title
-    );
+  const titleRange = sheet.getRange(layout.title);
 
   titleRange.merge();
 
   titleRange
-    .setValue(
-      hero.product +
-      ' Enterprise'
-    )
-    .setBackground(
-      theme.colors
-        .brand
-        .secondary
-    )
-    .setFontColor(
-      theme.colors
-        .text
-        .inverse
-    )
-    .setFontFamily(
-      theme.typography
-        .fontFamily
-        .primary
-    )
+    .setValue(hero.product + ' Enterprise')
+    .setBackground(theme.colors.brand.secondary)
+    .setFontColor(theme.colors.text.inverse)
+    .setFontFamily(theme.typography.fontFamily.primary)
     .setFontSize(22)
     .setFontWeight('bold')
-    .setHorizontalAlignment(
-      'left'
-    )
-    .setVerticalAlignment(
-      'middle'
-    );
+    .setHorizontalAlignment('left')
+    .setVerticalAlignment('middle');
 
   /*
    * Subtitle region.
    */
-  const subtitleRange =
-    sheet.getRange(
-      layout.subtitle
-    );
+  const subtitleRange = sheet.getRange(layout.subtitle);
 
   subtitleRange.merge();
 
   subtitleRange
-    .setValue(
-      hero.engine +
-      ' | ' +
-      hero.edition
-    )
+    .setValue(hero.engine + ' | ' + hero.edition)
     .setBackground('#FFFFFF')
-    
-  .setFontColor(
-    theme.colors
-        .text
-        .primary
-)
-    .setFontFamily(
-      theme.typography
-        .fontFamily
-        .primary
-    )
-    .setFontSize(
-      theme.typography
-        .styles
-        .bodyLarge
-        .fontSize
-    )
+
+    .setFontColor(theme.colors.text.primary)
+    .setFontFamily(theme.typography.fontFamily.primary)
+    .setFontSize(theme.typography.styles.bodyLarge.fontSize)
     .setFontWeight('bold')
-    .setHorizontalAlignment(
-      'left'
-    )
-    .setVerticalAlignment(
-      'middle'
-    );
+    .setHorizontalAlignment('left')
+    .setVerticalAlignment('middle');
 
   /*
    * Status region.
    */
-  const statusRange =
-    sheet.getRange(
-      layout.status
-    );
+  const statusRange = sheet.getRange(layout.status);
 
   statusRange.merge();
 
   statusRange
-    .setValue(
-      hero.statusIcon +
-      ' ' +
-      hero.statusLabel
-    )
-    .setBackground(
-      theme.colors
-        .brand
-        .secondary
-    )
+    .setValue(hero.statusIcon + ' ' + hero.statusLabel)
+    .setBackground(theme.colors.brand.secondary)
     .setFontColor(
-      hero.statusIcon === '✅'
-        ? theme.colors
-            .semantic
-            .success
-        : theme.colors
-            .semantic
-            .warning
+      hero.statusIcon === '✅' ? theme.colors.semantic.success : theme.colors.semantic.warning
     )
-    .setFontFamily(
-      theme.typography
-        .fontFamily
-        .primary
-    )
-    .setFontSize(
-      theme.typography
-        .styles
-        .headingSmall
-        .fontSize
-    )
+    .setFontFamily(theme.typography.fontFamily.primary)
+    .setFontSize(theme.typography.styles.headingSmall.fontSize)
     .setFontWeight('bold')
-    .setHorizontalAlignment(
-      'right'
-    )
-    .setVerticalAlignment(
-      'middle'
-    );
+    .setHorizontalAlignment('right')
+    .setVerticalAlignment('middle');
 
   /*
    * Metrics strip.
    */
-  const metricsRange =
-    sheet.getRange(
-      layout.metrics
-    );
+  const metricsRange = sheet.getRange(layout.metrics);
 
   metricsRange.merge();
 
   metricsRange
     .setValue(
       [
-    '⚡ ' + hero.duration,
+        '⚡ ' + hero.duration,
 
-    '📄 ' + hero.tables + ' tablas',
+        '📄 ' + hero.tables + ' tablas',
 
-    '🧩 ' + hero.columns + ' columnas'
-
-].join('     •     ')
+        '🧩 ' + hero.columns + ' columnas'
+      ].join('     •     ')
     )
     .setBackground('#EAF2FF')
-    .setFontColor(
-    theme.colors
-        .text
-        .primary
-)
-    .setFontFamily(
-      theme.typography
-        .fontFamily
-        .primary
-    )
-    .setFontSize(
-      theme.typography
-        .styles
-        .body
-        .fontSize
-    )
+    .setFontColor(theme.colors.text.primary)
+    .setFontFamily(theme.typography.fontFamily.primary)
+    .setFontSize(theme.typography.styles.body.fontSize)
     .setFontWeight('bold')
-    .setHorizontalAlignment(
-      'center'
-    )
-    .setVerticalAlignment(
-      'middle'
-    );
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
 
   /*
    * Build information.
    */
-  const buildRange =
-  sheet.getRange(
-    layout.build
-  );
+  const buildRange = sheet.getRange(layout.build);
 
-buildRange.merge();
+  buildRange.merge();
 
-buildRange
-  .setValue(
-    'Build ' +
-    aerpFormatDashboardHeroDate_(
-      hero.lastBuild
-    )
-  )
-  .setBackground('#FFFFFF')
-  .setFontColor(
-    theme.colors
-      .text
-      .secondary
-  )
-  .setFontFamily(
-    theme.typography
-      .fontFamily
-      .primary
-  )
-  .setFontSize(11)
-  .setFontWeight('normal')
-  .setHorizontalAlignment(
-    'center'
-  )
-  .setVerticalAlignment(
-    'middle'
-  );
+  buildRange
+    .setValue('Build ' + aerpFormatDashboardHeroDate_(hero.lastBuild))
+    .setBackground('#FFFFFF')
+    .setFontColor(theme.colors.text.secondary)
+    .setFontFamily(theme.typography.fontFamily.primary)
+    .setFontSize(11)
+    .setFontWeight('normal')
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
 
   /*
    * Outer border.
@@ -377,12 +211,8 @@ buildRange
     true,
     false,
     false,
-    theme.colors
-      .border
-      .strong,
-    SpreadsheetApp
-      .BorderStyle
-      .SOLID
+    theme.colors.border.strong,
+    SpreadsheetApp.BorderStyle.SOLID
   );
 
   return {
@@ -394,7 +224,6 @@ buildRange
     build: buildRange
   };
 }
-
 
 /* ============================================================
  * 3. PRIVATE LAYOUT
@@ -431,17 +260,12 @@ function aerpGetDashboardHeroLayout_() {
  * @return {string} Compact formatted date.
  * @private
  */
-function aerpFormatDashboardHeroDate_(
-  value
-) {
+function aerpFormatDashboardHeroDate_(value) {
   if (!value) {
     return 'No disponible';
   }
 
-  const match =
-    String(value).match(
-      /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/
-    );
+  const match = String(value).match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/);
 
   if (!match) {
     return String(value);
@@ -462,27 +286,15 @@ function aerpFormatDashboardHeroDate_(
     'Dic'
   ];
 
-  const day =
-    match[1];
+  const day = match[1];
 
-  const monthIndex =
-    Number(match[2]) - 1;
+  const monthIndex = Number(match[2]) - 1;
 
-  const hour =
-    match[4];
+  const hour = match[4];
 
-  const minute =
-    match[5];
+  const minute = match[5];
 
-  return (
-    day +
-    ' ' +
-    monthNames[monthIndex] +
-    ' ' +
-    hour +
-    ':' +
-    minute
-  );
+  return day + ' ' + monthNames[monthIndex] + ' ' + hour + ':' + minute;
 }
 
 /* ============================================================
@@ -499,51 +311,28 @@ function aerpValidateDashboardHero_() {
   const errors = [];
 
   const requiredFunctions = [
-    'aerpGetTheme',
-    'aerpGetCommercialDashboardMetrics_',
-    'aerpFormatDuration_',
-    'aerpFormatDashboardDate_'
+    ['aerpGetTheme', typeof aerpGetTheme],
+    ['aerpGetCommercialDashboardMetrics_', typeof aerpGetCommercialDashboardMetrics_],
+    ['aerpFormatDuration_', typeof aerpFormatDuration_],
+    ['aerpFormatDashboardDate_', typeof aerpFormatDashboardDate_]
   ];
 
-  requiredFunctions.forEach(
-    function(functionName) {
-      try {
-        const fn =
-          eval(functionName);
-
-        if (
-          typeof fn !== 'function'
-        ) {
-          errors.push(
-            'Función no disponible: ' +
-            functionName
-          );
-        }
-
-      } catch (error) {
-        errors.push(
-          'Función no disponible: ' +
-          functionName
-        );
-      }
+  requiredFunctions.forEach(function (requiredFunction) {
+    if (requiredFunction[1] !== 'function') {
+      errors.push('Función no disponible: ' + requiredFunction[0]);
     }
-  );
+  });
 
   return {
-    ok:
-      errors.length === 0,
+    ok: errors.length === 0,
 
-    module:
-      'AERP-031',
+    module: 'AERP-031',
 
-    version:
-      AERP_DASHBOARD_HERO_VERSION,
+    version: AERP_DASHBOARD_HERO_VERSION,
 
-    errors:
-      errors
+    errors: errors
   };
 }
-
 
 /* ============================================================
  * 5. TEST
@@ -559,162 +348,83 @@ function aerpValidateDashboardHero_() {
  * @return {Object} Test result.
  */
 function testDashboardHero() {
-  const validation =
-    aerpValidateDashboardHero_();
+  const validation = aerpValidateDashboardHero_();
 
   if (!validation.ok) {
-    throw new Error(
-      '[AERP-031] Dependencias incompletas: ' +
-      validation.errors.join(' | ')
-    );
+    throw new Error('[AERP-031] Dependencias incompletas: ' + validation.errors.join(' | '));
   }
 
-  const ss =
-    aerpGetSpreadsheet();
+  const ss = aerpGetSpreadsheet();
 
-  const sheetName =
-    'AERP_TEST_HERO';
+  const sheetName = 'AERP_TEST_HERO';
 
-  const previousSheet =
-    ss.getSheetByName(
-      sheetName
-    );
+  const previousSheet = ss.getSheetByName(sheetName);
 
   if (previousSheet) {
-    ss.deleteSheet(
-      previousSheet
-    );
+    ss.deleteSheet(previousSheet);
 
     SpreadsheetApp.flush();
   }
 
-  const sheet =
-    ss.insertSheet(
-      sheetName
-    );
+  const sheet = ss.insertSheet(sheetName);
 
-  aerpEnsureSheetSize_(
-    sheet,
-    12,
-    12
-  );
+  aerpEnsureSheetSize_(sheet, 12, 12);
 
-  sheet.setHiddenGridlines(
-    true
-  );
+  sheet.setHiddenGridlines(true);
 
-  sheet.setColumnWidths(
-    1,
-    11,
-    95
-  );
+  sheet.setColumnWidths(1, 11, 95);
 
-  sheet.setRowHeights(
-  1,
-  5,
-  32
-);
+  sheet.setRowHeights(1, 5, 32);
 
-  const metrics =
-    aerpGetCommercialDashboardMetrics_();
+  const metrics = aerpGetCommercialDashboardMetrics_();
 
-  const specification =
-    aerpCreateDashboardHeroSpecification(
-      metrics
-    );
+  const specification = aerpCreateDashboardHeroSpecification(metrics);
 
-  const rendered =
-    aerpRenderDashboardHero(
-      sheet,
-      specification
-    );
+  const rendered = aerpRenderDashboardHero(sheet, specification);
 
   SpreadsheetApp.flush();
 
   const tests = {
-    validationPassed:
-      validation.ok === true,
+    validationPassed: validation.ok === true,
 
-    sheetCreated:
-      Boolean(sheet),
+    sheetCreated: Boolean(sheet),
 
-    titleRendered:
-      sheet
-        .getRange('A1:G1')
-        .getDisplayValue()
-        .indexOf(
-          AERP_BRAND.PRODUCT
-        ) !== -1,
+    titleRendered: sheet.getRange('A1:G1').getDisplayValue().indexOf(AERP_BRAND.PRODUCT) !== -1,
 
     metricsRendered:
-      sheet
-        .getRange('A3:K4')
-        .getDisplayValue()
-        .indexOf(
-          String(metrics.tables)
-        ) !== -1,
+      sheet.getRange('A3:K4').getDisplayValue().indexOf(String(metrics.tables)) !== -1,
 
-    buildRendered:
-  sheet
-    .getRange('A5:K5')
-    .getDisplayValue()
-    .indexOf(
-      'Build '
-    ) === 0,
+    buildRendered: sheet.getRange('A5:K5').getDisplayValue().indexOf('Build ') === 0,
 
-    rangesReturned:
-      Boolean(
-        rendered &&
-        rendered.surface &&
-        rendered.title &&
-        rendered.metrics
-      )
+    rangesReturned: Boolean(rendered && rendered.surface && rendered.title && rendered.metrics)
   };
 
-  const testValues =
-    Object.keys(
-      tests
-    ).map(function(testName) {
-      return tests[testName];
-    });
+  const testValues = Object.keys(tests).map(function (testName) {
+    return tests[testName];
+  });
 
   const result = {
-    ok:
-      testValues.every(function(value) {
-        return value === true;
-      }),
+    ok: testValues.every(function (value) {
+      return value === true;
+    }),
 
-    module:
-      'AERP-031',
+    module: 'AERP-031',
 
-    version:
-      AERP_DASHBOARD_HERO_VERSION,
+    version: AERP_DASHBOARD_HERO_VERSION,
 
-    phase:
-      'Hero Foundation',
+    phase: 'Hero Foundation',
 
-    sheet:
-      sheetName,
+    sheet: sheetName,
 
-    tests:
-      tests,
+    tests: tests,
 
-    errors:
-      []
+    errors: []
   };
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   if (!result.ok) {
-    throw new Error(
-      'Dashboard Hero no superó todas las pruebas.'
-    );
+    throw new Error('Dashboard Hero no superó todas las pruebas.');
   }
 
   return result;

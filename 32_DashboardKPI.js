@@ -23,14 +23,12 @@
  * ============================================================
  */
 
-
 /* ============================================================
  * 1. MODULE CONSTANTS
  * ============================================================
  */
 
-const AERP_DASHBOARD_KPI_VERSION =
-  '1.0.0';
+const AERP_DASHBOARD_KPI_VERSION = '1.0.0';
 /**
  * Official relative KPI layout.
  *
@@ -45,7 +43,6 @@ const AERP_DASHBOARD_KPI_LAYOUT = {
   minimumRows: 7
 };
 
-
 /* ============================================================
  * 2. PUBLIC API
  * ============================================================
@@ -57,89 +54,49 @@ const AERP_DASHBOARD_KPI_LAYOUT = {
  * @param {Object} config KPI configuration.
  * @return {Object} Normalized KPI specification.
  */
-function aerpCreateDashboardKpiSpecification(
-  config
-) {
-  if (
-    !config ||
-    typeof config !== 'object' ||
-    Array.isArray(config)
-  ) {
-    throw new Error(
-      '[AERP-032] KPI configuration must be an object.'
-    );
+function aerpCreateDashboardKpiSpecification(config) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error('[AERP-032] KPI configuration must be an object.');
   }
 
-  const title =
-    String(config.title || '')
-      .trim();
+  const title = String(config.title || '').trim();
 
   if (!title) {
-    throw new Error(
-      '[AERP-032] KPI title is required.'
-    );
+    throw new Error('[AERP-032] KPI title is required.');
   }
 
   return {
     id:
       config.id ||
-      (
-        'dashboard-kpi-' +
+      'dashboard-kpi-' +
         title
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '')
-      ),
+          .replace(/^-|-$/g, ''),
 
-    icon:
-      config.icon || '📊',
+    icon: config.icon || '📊',
 
-    title:
-      title,
+    title: title,
 
-    value:
-      config.value === null ||
-      config.value === undefined
-        ? ''
-        : String(config.value),
+    value: config.value === null || config.value === undefined ? '' : String(config.value),
 
-    subtitle:
-      String(
-        config.subtitle || ''
-      ),
+    subtitle: String(config.subtitle || ''),
 
-    trend:
-      String(
-        config.trend || ''
-      ),
+    trend: String(config.trend || ''),
 
-    trendDirection:
-      aerpNormalizeDashboardKpiTrendDirection_(
-        config.trendDirection
-      ),
+    trendDirection: aerpNormalizeDashboardKpiTrendDirection_(config.trendDirection),
 
-    status:
-      String(
-        config.status || ''
-      ),
+    status: String(config.status || ''),
 
-    visible:
-      config.visible !== false,
+    visible: config.visible !== false,
 
-    enabled:
-      config.enabled !== false,
+    enabled: config.enabled !== false,
 
-    loading:
-      config.loading === true,
+    loading: config.loading === true,
 
-    options:
-      config.options &&
-      typeof config.options === 'object'
-        ? config.options
-        : {}
+    options: config.options && typeof config.options === 'object' ? config.options : {}
   };
 }
-
 
 /**
  * Renders one Enterprise Dashboard KPI.
@@ -166,70 +123,33 @@ function aerpCreateDashboardKpiSpecification(
  * @param {Object} specification KPI specification.
  * @return {*} Complete rendered KPI range.
  */
-function aerpRenderDashboardKpi(
-  sheet,
-  rangeA1,
-  specification
-) {
+function aerpRenderDashboardKpi(sheet, rangeA1, specification) {
   if (!sheet) {
-    throw new Error(
-      '[AERP-032] A valid sheet is required.'
-    );
+    throw new Error('[AERP-032] A valid sheet is required.');
   }
 
-  if (
-    !specification ||
-    typeof specification !== 'object'
-  ) {
-    throw new Error(
-      '[AERP-032] KPI specification is required.'
-    );
+  if (!specification || typeof specification !== 'object') {
+    throw new Error('[AERP-032] KPI specification is required.');
   }
 
-  const layout =
-    aerpCreateDashboardKpiLayout_(
-      sheet,
-      rangeA1
-    );
+  const layout = aerpCreateDashboardKpiLayout_(sheet, rangeA1);
 
-  const theme =
-    aerpGetTheme();
+  const theme = aerpGetTheme();
 
-  const options =
-    specification.options || {};
+  const options = specification.options || {};
 
   /*
    * Main KPI surface.
    */
   layout.source
-    .setBackground(
-      options.background ||
-      theme.colors
-        .surface
-        .default
-    )
-  .setBorder(
-    true,
-    true,
-    true,
-    true,
-    false,
-    false,
-    '#E5E7EB',
-    SpreadsheetApp.BorderStyle.SOLID
-)
-    .setFontFamily(
-      theme.typography
-        .fontFamily
-        .primary
-    );
+    .setBackground(options.background || theme.colors.surface.default)
+    .setBorder(true, true, true, true, false, false, '#E5E7EB', SpreadsheetApp.BorderStyle.SOLID)
+    .setFontFamily(theme.typography.fontFamily.primary);
 
   /*
    * Invisible state.
    */
-  if (
-    specification.visible === false
-  ) {
+  if (specification.visible === false) {
     layout.source.clearContent();
 
     return layout.source;
@@ -238,37 +158,19 @@ function aerpRenderDashboardKpi(
   /*
    * Loading state.
    */
-  if (
-    specification.loading === true
-  ) {
+  if (specification.loading === true) {
     layout.title.clearContent();
     layout.subtitle.clearContent();
     layout.footer.clearContent();
 
     layout.value
-      .setValue(
-        options.loadingText ||
-        'Cargando...'
-      )
-      .setFontColor(
-        theme.colors
-          .text
-          .secondary
-      )
-      .setFontSize(
-        theme.typography
-          .styles
-          .bodyLarge
-          .fontSize
-      )
+      .setValue(options.loadingText || 'Cargando...')
+      .setFontColor(theme.colors.text.secondary)
+      .setFontSize(theme.typography.styles.bodyLarge.fontSize)
       .setFontWeight('bold')
-      .setHorizontalAlignment(
-        'center'
-      )
-     .setVerticalAlignment(
-  'top'
-)
-.setWrap(false);
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('top')
+      .setWrap(false);
 
     return layout.source;
   }
@@ -278,159 +180,68 @@ function aerpRenderDashboardKpi(
    */
   layout.title
     .setValue(
-      [
-        specification.icon || '',
-        specification.title || ''
-      ]
-        .filter(function(value) {
+      [specification.icon || '', specification.title || '']
+        .filter(function (value) {
           return String(value).trim() !== '';
         })
         .join(' ')
     )
-    .setFontColor(
-      options.titleColor ||
-      theme.colors
-        .text
-        .primary
-    )
-    .setFontSize(
-    Number(
-        options.titleFontSize || 11
-    )
-)
+    .setFontColor(options.titleColor || theme.colors.text.primary)
+    .setFontSize(Number(options.titleFontSize || 11))
     .setFontWeight('bold')
-    .setHorizontalAlignment(
-      options.titleAlignment ||
-      'left'
-    )
-    .setVerticalAlignment(
-      'middle'
-    )
+    .setHorizontalAlignment(options.titleAlignment || 'left')
+    .setVerticalAlignment('middle')
     .setWrap(true);
 
   /*
    * Value.
    */
   layout.value
-    .setValue(
-      specification.value
-    )
-    .setFontColor(
-      options.valueColor ||
-      theme.colors
-        .text
-        .primary
-    )
-    .setFontSize(
-      Number(
-        options.valueFontSize ||
-        28
-      )
-    )
-    .setFontWeight(
-      options.valueFontWeight ||
-      'bold'
-    )
-    .setHorizontalAlignment(
-      options.valueAlignment ||
-      'center'
-    )
-    .setVerticalAlignment(
-      'middle'
-    )
+    .setValue(specification.value)
+    .setFontColor(options.valueColor || theme.colors.text.primary)
+    .setFontSize(Number(options.valueFontSize || 28))
+    .setFontWeight(options.valueFontWeight || 'bold')
+    .setHorizontalAlignment(options.valueAlignment || 'center')
+    .setVerticalAlignment('middle')
     .setWrap(true);
 
   /*
    * Subtitle.
    */
   layout.subtitle
-    .setValue(
-      specification.subtitle || ''
-    )
-    .setFontColor(
-      options.subtitleColor ||
-      theme.colors
-        .text
-        .secondary
-    )
-    .setFontSize(
-      Number(
-        options.subtitleFontSize ||
-        theme.typography
-          .styles
-          .bodySmall
-          .fontSize
-      )
-    )
+    .setValue(specification.subtitle || '')
+    .setFontColor(options.subtitleColor || theme.colors.text.secondary)
+    .setFontSize(Number(options.subtitleFontSize || theme.typography.styles.bodySmall.fontSize))
     .setFontWeight('normal')
-    .setHorizontalAlignment(
-      options.subtitleAlignment ||
-      'left'
-    )
-    .setVerticalAlignment(
-      'middle'
-    )
+    .setHorizontalAlignment(options.subtitleAlignment || 'left')
+    .setVerticalAlignment('middle')
     .setWrap(true);
 
   /*
    * Footer: trend + status.
    */
-  const footerText =
-    aerpBuildDashboardKpiFooterText_(
-      specification
-    );
+  const footerText = aerpBuildDashboardKpiFooterText_(specification);
 
   layout.footer
-    .setValue(
-      footerText
-    )
-    .setFontColor(
-      aerpResolveDashboardKpiFooterColor_(
-        specification,
-        theme
-      )
-    )
-    .setFontSize(
-      Number(
-        options.footerFontSize ||
-        theme.typography
-          .styles
-          .caption
-          .fontSize
-      )
-    )
+    .setValue(footerText)
+    .setFontColor(aerpResolveDashboardKpiFooterColor_(specification, theme))
+    .setFontSize(Number(options.footerFontSize || theme.typography.styles.caption.fontSize))
     .setFontWeight('bold')
-    .setHorizontalAlignment(
-      options.footerAlignment ||
-      'left'
-    )
-    .setVerticalAlignment(
-      'middle'
-    )
+    .setHorizontalAlignment(options.footerAlignment || 'left')
+    .setVerticalAlignment('middle')
     .setWrap(true);
 
   /*
    * Disabled state.
    */
-  if (
-    specification.enabled === false
-  ) {
+  if (specification.enabled === false) {
     layout.source
-      .setBackground(
-        theme.colors
-          .surface
-          .disabled
-      )
-      .setFontColor(
-        theme.colors
-          .text
-          .disabled
-      );
+      .setBackground(theme.colors.surface.disabled)
+      .setFontColor(theme.colors.text.disabled);
   }
 
   return layout.source;
 }
-
 
 /* ============================================================
  * 3. PRIVATE HELPERS
@@ -444,107 +255,59 @@ function aerpRenderDashboardKpi(
  * @return {Object} Calculated KPI regions.
  * @private
  */
-function aerpCreateDashboardKpiLayout_(
-  sheet,
-  rangeA1
-) {
+function aerpCreateDashboardKpiLayout_(sheet, rangeA1) {
   if (!sheet) {
-    throw new Error(
-      '[AERP-032] A valid sheet is required.'
-    );
+    throw new Error('[AERP-032] A valid sheet is required.');
   }
 
-  const targetRange =
-    sheet.getRange(
-      String(rangeA1 || '').trim()
-    );
+  const targetRange = sheet.getRange(String(rangeA1 || '').trim());
 
   targetRange.breakApart();
   targetRange.clear();
 
-  const startRow =
-    targetRange.getRow();
+  const startRow = targetRange.getRow();
 
-  const startColumn =
-    targetRange.getColumn();
+  const startColumn = targetRange.getColumn();
 
-  const rowCount =
-    targetRange.getNumRows();
+  const rowCount = targetRange.getNumRows();
 
-  const columnCount =
-    targetRange.getNumColumns();
+  const columnCount = targetRange.getNumColumns();
 
-  const layout =
-    AERP_DASHBOARD_KPI_LAYOUT;
+  const layout = AERP_DASHBOARD_KPI_LAYOUT;
 
-  if (
-    rowCount <
-    layout.minimumRows
-  ) {
-    throw new Error(
-      '[AERP-032] KPI range requires at least ' +
-      layout.minimumRows +
-      ' rows.'
-    );
+  if (rowCount < layout.minimumRows) {
+    throw new Error('[AERP-032] KPI range requires at least ' + layout.minimumRows + ' rows.');
   }
 
-  const titleRows =
-    layout.titleRows;
+  const titleRows = layout.titleRows;
 
-  const subtitleRows =
-    layout.subtitleRows;
+  const subtitleRows = layout.subtitleRows;
 
-  const footerRows =
-    layout.footerRows;
+  const footerRows = layout.footerRows;
 
-  const valueRows =
-    rowCount -
-    titleRows -
-    subtitleRows -
-    footerRows;
+  const valueRows = rowCount - titleRows - subtitleRows - footerRows;
 
   if (valueRows < 1) {
-    throw new Error(
-      '[AERP-032] KPI range does not have enough rows.'
-    );
+    throw new Error('[AERP-032] KPI range does not have enough rows.');
   }
 
-  const titleRange =
-    sheet.getRange(
-      startRow,
-      startColumn,
-      titleRows,
-      columnCount
-    );
+  const titleRange = sheet.getRange(startRow, startColumn, titleRows, columnCount);
 
-  const valueRange =
-    sheet.getRange(
-      startRow + titleRows,
-      startColumn,
-      valueRows,
-      columnCount
-    );
+  const valueRange = sheet.getRange(startRow + titleRows, startColumn, valueRows, columnCount);
 
-  const subtitleRange =
-    sheet.getRange(
-      startRow +
-      titleRows +
-      valueRows,
-      startColumn,
-      subtitleRows,
-      columnCount
-    );
+  const subtitleRange = sheet.getRange(
+    startRow + titleRows + valueRows,
+    startColumn,
+    subtitleRows,
+    columnCount
+  );
 
-  const footerRange =
-    sheet.getRange(
-      startRow +
-      titleRows +
-      valueRows +
-      subtitleRows,
-      startColumn,
-      footerRows,
-      columnCount
-    );
+  const footerRange = sheet.getRange(
+    startRow + titleRows + valueRows + subtitleRows,
+    startColumn,
+    footerRows,
+    columnCount
+  );
 
   titleRange.merge();
   valueRange.merge();
@@ -590,48 +353,31 @@ function aerpCreateDashboardKpiLayout_(
  * @return {string} Footer text.
  * @private
  */
-function aerpBuildDashboardKpiFooterText_(
-  specification
-) {
+function aerpBuildDashboardKpiFooterText_(specification) {
   const parts = [];
 
-  const trend =
-    String(
-      specification.trend || ''
-    ).trim();
+  const trend = String(specification.trend || '').trim();
 
-  const status =
-    String(
-      specification.status || ''
-    ).trim();
+  const status = String(specification.status || '').trim();
 
   if (trend) {
     let trendIcon = '•';
 
-    if (
-      specification.trendDirection === 'up'
-    ) {
+    if (specification.trendDirection === 'up') {
       trendIcon = '▲';
     }
 
-    if (
-      specification.trendDirection === 'down'
-    ) {
+    if (specification.trendDirection === 'down') {
       trendIcon = '▼';
     }
 
-    parts.push(
-      trendIcon + ' ' + trend
-    );
+    parts.push(trendIcon + ' ' + trend);
   }
 
- parts.push(
-  'Actualizado'
-);
+  parts.push(status || 'Actualizado');
 
   return parts.join('     ');
 }
-
 
 /**
  * Resolves the KPI footer color.
@@ -641,48 +387,28 @@ function aerpBuildDashboardKpiFooterText_(
  * @return {string} Footer color.
  * @private
  */
-function aerpResolveDashboardKpiFooterColor_(
-  specification,
-  theme
-) {
-  if (
-    specification.trendDirection === 'up'
-  ) {
-    return theme.colors
-      .semantic
-      .success;
+function aerpResolveDashboardKpiFooterColor_(specification, theme) {
+  if (specification.trendDirection === 'up') {
+    return theme.colors.semantic.success;
   }
 
-  if (
-    specification.trendDirection === 'down'
-  ) {
-    return theme.colors
-      .semantic
-      .error;
+  if (specification.trendDirection === 'down') {
+    return theme.colors.semantic.error;
   }
 
-  return theme.colors
-    .text
-    .secondary;
+  return theme.colors.text.secondary;
 }
-function aerpNormalizeDashboardKpiTrendDirection_(
-  value
-) {
-  const normalized =
-    String(value || 'neutral')
-      .trim()
-      .toLowerCase();
+function aerpNormalizeDashboardKpiTrendDirection_(value) {
+  const normalized = String(value || 'neutral')
+    .trim()
+    .toLowerCase();
 
-  if (
-    ['up', 'down', 'neutral']
-      .indexOf(normalized) === -1
-  ) {
+  if (['up', 'down', 'neutral'].indexOf(normalized) === -1) {
     return 'neutral';
   }
 
   return normalized;
 }
-
 
 /* ============================================================
  * 4. VALIDATION
@@ -698,50 +424,27 @@ function aerpValidateDashboardKpi_() {
   const errors = [];
 
   const requiredFunctions = [
-    'aerpCreateComponent',
-    'aerpRenderComponent',
-    'aerpGetTheme'
+    ['aerpCreateComponent', typeof aerpCreateComponent],
+    ['aerpRenderComponent', typeof aerpRenderComponent],
+    ['aerpGetTheme', typeof aerpGetTheme]
   ];
 
-  requiredFunctions.forEach(
-    function(functionName) {
-      try {
-        const fn =
-          eval(functionName);
-
-        if (
-          typeof fn !== 'function'
-        ) {
-          errors.push(
-            'Función no disponible: ' +
-            functionName
-          );
-        }
-
-      } catch (error) {
-        errors.push(
-          'Función no disponible: ' +
-          functionName
-        );
-      }
+  requiredFunctions.forEach(function (requiredFunction) {
+    if (requiredFunction[1] !== 'function') {
+      errors.push('Función no disponible: ' + requiredFunction[0]);
     }
-  );
+  });
 
   return {
-    ok:
-      errors.length === 0,
+    ok: errors.length === 0,
 
-    module:
-      'AERP-032',
+    module: 'AERP-032',
 
-    version:
-      AERP_DASHBOARD_KPI_VERSION,
+    version: AERP_DASHBOARD_KPI_VERSION,
 
-    errors:
-      errors
+    errors: errors
   };
 }
-
 
 /* ============================================================
  * 5. TEST
@@ -757,202 +460,111 @@ function aerpValidateDashboardKpi_() {
  * @return {Object} Test result.
  */
 function testDashboardKpi() {
-  const validation =
-    aerpValidateDashboardKpi_();
+  const validation = aerpValidateDashboardKpi_();
 
   if (!validation.ok) {
-    throw new Error(
-      '[AERP-032] Dependencias incompletas: ' +
-      validation.errors.join(' | ')
-    );
+    throw new Error('[AERP-032] Dependencias incompletas: ' + validation.errors.join(' | '));
   }
 
-  const ss =
-    aerpGetSpreadsheet();
+  const ss = aerpGetSpreadsheet();
 
-  const sheetName =
-    'AERP_TEST_DASHBOARD_KPI';
+  const sheetName = 'AERP_TEST_DASHBOARD_KPI';
 
-  const previousSheet =
-    ss.getSheetByName(
-      sheetName
-    );
+  const previousSheet = ss.getSheetByName(sheetName);
 
   if (previousSheet) {
-    ss.deleteSheet(
-      previousSheet
-    );
+    ss.deleteSheet(previousSheet);
 
     SpreadsheetApp.flush();
   }
 
-  const sheet =
-    ss.insertSheet(
-      sheetName
-    );
+  const sheet = ss.insertSheet(sheetName);
 
-  aerpEnsureSheetSize_(
-    sheet,
-    12,
-    12
-  );
+  aerpEnsureSheetSize_(sheet, 12, 12);
 
-  sheet.setHiddenGridlines(
-    true
-  );
+  sheet.setHiddenGridlines(true);
 
-  sheet.setColumnWidths(
-    1,
-    11,
-    95
-  );
+  sheet.setColumnWidths(1, 11, 95);
 
- sheet.setRowHeights(
-  1,
-  8,
-  32
-);
+  sheet.setRowHeights(1, 8, 32);
 
-  const specification =
-    aerpCreateDashboardKpiSpecification({
-      id:
-        'test-dashboard-kpi',
+  const specification = aerpCreateDashboardKpiSpecification({
+    id: 'test-dashboard-kpi',
 
-      icon:
-        '📄',
+    icon: '📄',
 
-      title:
-        'TABLAS',
+    title: 'TABLAS',
 
-      value:
-        23,
+    value: 23,
 
-      subtitle:
-        'Tablas registradas',
+    subtitle: 'Tablas registradas',
 
-      trend:
-        '+2',
+    trend: '+2',
 
-      trendDirection:
-        'up',
+    trendDirection: 'up',
 
-      status:
-        'OK',
+    status: 'OK',
 
-      options: {
-        valueFontSize: 28
-      }
-    });
+    options: {
+      valueFontSize: 28
+    }
+  });
 
-  const renderedRange =
-    aerpRenderDashboardKpi(
-      sheet,
-      'A1:E8',
-      specification
-    );
+  const renderedRange = aerpRenderDashboardKpi(sheet, 'A1:E8', specification);
 
   SpreadsheetApp.flush();
 
-  const displayText =
-    sheet
-      .getRange('A1:E8')
-      .getDisplayValues()
-      .flat()
-      .join(' ');
+  const displayText = sheet.getRange('A1:E8').getDisplayValues().flat().join(' ');
 
   const tests = {
-    validationPassed:
-      validation.ok === true,
+    validationPassed: validation.ok === true,
 
-    sheetCreated:
-      Boolean(sheet),
+    sheetCreated: Boolean(sheet),
 
-    specificationCreated:
-      specification.title ===
-        'TABLAS' &&
-      specification.value ===
-        '23',
+    specificationCreated: specification.title === 'TABLAS' && specification.value === '23',
 
-    trendNormalized:
-      specification
-        .trendDirection ===
-      'up',
+    trendNormalized: specification.trendDirection === 'up',
 
-    rangeRendered:
-      Boolean(renderedRange),
+    rangeRendered: Boolean(renderedRange),
 
-    titleRendered:
-      displayText.indexOf(
-        'TABLAS'
-      ) !== -1,
+    titleRendered: displayText.indexOf('TABLAS') !== -1,
 
-    valueRendered:
-      displayText.indexOf(
-        '23'
-      ) !== -1,
+    valueRendered: displayText.indexOf('23') !== -1,
 
-    subtitleRendered:
-      displayText.indexOf(
-        'Tablas registradas'
-      ) !== -1,
+    subtitleRendered: displayText.indexOf('Tablas registradas') !== -1,
 
-          trendRendered:
-      displayText.indexOf(
-        '+2'
-      ) !== -1,
+    trendRendered: displayText.indexOf('+2') !== -1,
 
-    statusRendered:
-      displayText.indexOf(
-        'OK'
-      ) !== -1
+    statusRendered: displayText.indexOf('OK') !== -1
   };
 
-  const testValues =
-    Object.keys(
-      tests
-    ).map(function(testName) {
-      return tests[testName];
-    });
+  const testValues = Object.keys(tests).map(function (testName) {
+    return tests[testName];
+  });
 
   const result = {
-    ok:
-      testValues.every(function(value) {
-        return value === true;
-      }),
+    ok: testValues.every(function (value) {
+      return value === true;
+    }),
 
-    module:
-      'AERP-032',
+    module: 'AERP-032',
 
-    version:
-      AERP_DASHBOARD_KPI_VERSION,
+    version: AERP_DASHBOARD_KPI_VERSION,
 
-    phase:
-      'KPI Foundation',
+    phase: 'KPI Foundation',
 
-    sheet:
-      sheetName,
+    sheet: sheetName,
 
-    tests:
-      tests,
+    tests: tests,
 
-    errors:
-      []
+    errors: []
   };
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   if (!result.ok) {
-    throw new Error(
-      'Dashboard KPI no superó todas las pruebas.'
-    );
+    throw new Error('Dashboard KPI no superó todas las pruebas.');
   }
 
   return result;
 }
-

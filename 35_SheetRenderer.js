@@ -38,15 +38,12 @@
  * ============================================================
  */
 
-
 /* ============================================================
  * 1. MODULE CONSTANTS
  * ============================================================
  */
 
-const AERP_LAYOUT_SHEET_RENDERER_VERSION =
-  '1.0.0';
-
+const AERP_LAYOUT_SHEET_RENDERER_VERSION = '1.0.0';
 
 const AERP_SHEET_RENDERER_DEFAULT = {
   clearBeforeRender: true,
@@ -54,7 +51,6 @@ const AERP_SHEET_RENDERER_DEFAULT = {
   flushAfterRender: true,
   stopOnError: true
 };
-
 
 /**
  * Renderer registry.
@@ -67,19 +63,15 @@ const AERP_SHEET_RENDERER_DEFAULT = {
  */
 const AERP_SHEET_RENDERER_REGISTRY = {
   hero: {
-    renderer:
-      'aerpRenderDashboardHero',
+    renderer: 'aerpRenderDashboardHero',
 
-    specificationFactory:
-      'aerpCreateDashboardHeroSpecification'
+    specificationFactory: 'aerpCreateDashboardHeroSpecification'
   },
 
   kpi: {
-    renderer:
-      'aerpRenderDashboardKpi',
+    renderer: 'aerpRenderDashboardKpi',
 
-    specificationFactory:
-      'aerpCreateDashboardKpiSpecification'
+    specificationFactory: 'aerpCreateDashboardKpiSpecification'
   }
 };
 
@@ -99,67 +91,43 @@ const AERP_SHEET_RENDERER_REGISTRY = {
  * @param {Object=} options Optional rendering configuration.
  * @return {Object} Complete rendering report.
  */
-function aerpRenderDashboardLayout(
-  sheet,
-  layoutResult,
-  options
-) {
-  const renderOptions =
-    aerpNormalizeSheetRendererOptions_(
-      options
-    );
+function aerpRenderDashboardLayout(sheet, layoutResult, options) {
+  const renderOptions = aerpNormalizeSheetRendererOptions_(options);
 
-  aerpRequireSheetRendererSheet_(
-    sheet
-  );
+  aerpRequireSheetRendererSheet_(sheet);
 
-  aerpRequireCalculatedLayout_(
-    layoutResult
-  );
+  aerpRequireCalculatedLayout_(layoutResult);
 
-  const dependencyValidation =
-    aerpValidateSheetRendererDependencies();
+  const dependencyValidation = aerpValidateSheetRendererDependencies();
 
   if (!dependencyValidation.ok) {
     throw new Error(
-      '[AERP-035] Renderer dependencies are incomplete: ' +
-      dependencyValidation.errors.join(' | ')
+      '[AERP-035] Renderer dependencies are incomplete: ' + dependencyValidation.errors.join(' | ')
     );
   }
 
   const report = {
     ok: false,
 
-    module:
-      'AERP-035',
+    module: 'AERP-035',
 
-    version:
-      AERP_LAYOUT_SHEET_RENDERER_VERSION,
+    version: AERP_LAYOUT_SHEET_RENDERER_VERSION,
 
-    layoutId:
-      layoutResult.layoutId ||
-      '',
+    layoutId: layoutResult.layoutId || '',
 
-    sheet:
-      sheet.getName(),
+    sheet: sheet.getName(),
 
-    startedAt:
-      new Date().toISOString(),
+    startedAt: new Date().toISOString(),
 
-    completedAt:
-      null,
+    completedAt: null,
 
-    totalPlacements:
-      layoutResult.placements.length,
+    totalPlacements: layoutResult.placements.length,
 
-    renderedCount:
-      0,
+    renderedCount: 0,
 
-    skippedCount:
-      0,
+    skippedCount: 0,
 
-    failedCount:
-      0,
+    failedCount: 0,
 
     placements: [],
 
@@ -167,166 +135,84 @@ function aerpRenderDashboardLayout(
   };
 
   try {
-    if (
-      renderOptions.clearBeforeRender ===
-      true
-    ) {
-      aerpPrepareSheetForLayoutRender_(
-        sheet,
-        layoutResult,
-        renderOptions
-      );
+    if (renderOptions.clearBeforeRender === true) {
+      aerpPrepareSheetForLayoutRender_(sheet, layoutResult, renderOptions);
     }
 
-    layoutResult.placements.forEach(
-      function(placement, index) {
-        try {
-          const placementReport =
-            aerpRenderLayoutPlacement(
-              sheet,
-              placement,
-              {
-                placementIndex:
-                  index,
+    layoutResult.placements.forEach(function (placement, index) {
+      try {
+        const placementReport = aerpRenderLayoutPlacement(sheet, placement, {
+          placementIndex: index,
 
-                stopOnError:
-                  renderOptions.stopOnError,
+          stopOnError: renderOptions.stopOnError,
 
-                parentOptions:
-                  renderOptions
-              }
-            );
+          parentOptions: renderOptions
+        });
 
-          report.placements.push(
-            placementReport
-          );
+        report.placements.push(placementReport);
 
-          if (
-            placementReport.status ===
-            'RENDERED'
-          ) {
-            report.renderedCount += 1;
-          } else if (
-            placementReport.status ===
-            'SKIPPED'
-          ) {
-            report.skippedCount += 1;
-          } else {
-            report.failedCount += 1;
-          }
-
-        } catch (error) {
-          const message =
-            error &&
-            error.message
-              ? error.message
-              : String(error);
-
+        if (placementReport.status === 'RENDERED') {
+          report.renderedCount += 1;
+        } else if (placementReport.status === 'SKIPPED') {
+          report.skippedCount += 1;
+        } else {
           report.failedCount += 1;
+        }
+      } catch (error) {
+        const message = error && error.message ? error.message : String(error);
 
-          report.errors.push(
-            message
-          );
+        report.failedCount += 1;
 
-          report.placements.push({
-            ok: false,
+        report.errors.push(message);
 
-            id:
-              placement &&
-              placement.id
-                ? placement.id
-                : (
-                    'placement-' +
-                    String(index + 1)
-                  ),
+        report.placements.push({
+          ok: false,
 
-            type:
-              placement &&
-              placement.type
-                ? placement.type
-                : 'unknown',
+          id: placement && placement.id ? placement.id : 'placement-' + String(index + 1),
 
-            rangeA1:
-              placement &&
-              placement.rangeA1
-                ? placement.rangeA1
-                : '',
+          type: placement && placement.type ? placement.type : 'unknown',
 
-            status:
-              'FAILED',
+          rangeA1: placement && placement.rangeA1 ? placement.rangeA1 : '',
 
-            error:
-              message
-          });
+          status: 'FAILED',
 
-          if (
-            renderOptions.stopOnError ===
-            true
-          ) {
-            throw error;
-          }
+          error: message
+        });
+
+        if (renderOptions.stopOnError === true) {
+          throw error;
         }
       }
-    );
+    });
 
-    if (
-      renderOptions.activateSheet ===
-      true
-    ) {
+    if (renderOptions.activateSheet === true) {
       sheet.activate();
     }
 
-    if (
-      renderOptions.flushAfterRender ===
-      true
-    ) {
+    if (renderOptions.flushAfterRender === true) {
       SpreadsheetApp.flush();
     }
-
   } catch (error) {
-    const message =
-      error &&
-      error.message
-        ? error.message
-        : String(error);
+    const message = error && error.message ? error.message : String(error);
 
-    if (
-      report.errors.indexOf(
-        message
-      ) === -1
-    ) {
-      report.errors.push(
-        message
-      );
+    if (report.errors.indexOf(message) === -1) {
+      report.errors.push(message);
     }
   }
 
-  report.completedAt =
-    new Date().toISOString();
+  report.completedAt = new Date().toISOString();
 
   report.ok =
     report.errors.length === 0 &&
     report.failedCount === 0 &&
-    (
-      report.renderedCount +
-      report.skippedCount
-    ) ===
-      report.totalPlacements;
+    report.renderedCount + report.skippedCount === report.totalPlacements;
 
-  if (
-    !report.ok &&
-    renderOptions.stopOnError ===
-      true
-  ) {
-    throw new Error(
-      '[AERP-035] Dashboard Layout rendering failed: ' +
-      report.errors.join(' | ')
-    );
+  if (!report.ok && renderOptions.stopOnError === true) {
+    throw new Error('[AERP-035] Dashboard Layout rendering failed: ' + report.errors.join(' | '));
   }
 
   return report;
 }
-
 
 /**
  * Renders one calculated Layout placement.
@@ -339,141 +225,88 @@ function aerpRenderDashboardLayout(
  * @param {Object=} options Optional rendering configuration.
  * @return {Object} Placement rendering report.
  */
-function aerpRenderLayoutPlacement(
-  sheet,
-  placement,
-  options
-) {
-  aerpRequireSheetRendererSheet_(
-    sheet
-  );
+function aerpRenderLayoutPlacement(sheet, placement, options) {
+  aerpRequireSheetRendererSheet_(sheet);
 
-  aerpRequireLayoutPlacement_(
-    placement
-  );
+  aerpRequireLayoutPlacement_(placement);
 
-  const renderOptions =
-    aerpNormalizeSheetRendererOptions_(
-      options
-    );
+  const renderOptions = aerpNormalizeSheetRendererOptions_(options);
 
   const report = {
     ok: false,
 
-    id:
-      placement.id,
+    id: placement.id,
 
-    type:
-      placement.type,
+    type: placement.type,
 
-    rangeA1:
-      placement.rangeA1,
+    rangeA1: placement.rangeA1,
 
-    status:
-      'PENDING',
+    status: 'PENDING',
 
-    renderer:
-      '',
+    renderer: '',
 
-    specificationFactory:
-      '',
+    specificationFactory: '',
 
-    startedAt:
-      new Date().toISOString(),
+    startedAt: new Date().toISOString(),
 
-    completedAt:
-      null,
+    completedAt: null,
 
-    error:
-      null
+    error: null
   };
 
   /*
    * Disabled components should normally be removed by the
    * Layout Engine. This remains as a defensive safeguard.
    */
-  if (
-    placement.component &&
-    placement.component.visible === false
-  ) {
-    report.ok =
-      true;
+  if (placement.component && placement.component.visible === false) {
+    report.ok = true;
 
-    report.status =
-      'SKIPPED';
+    report.status = 'SKIPPED';
 
-    report.completedAt =
-      new Date().toISOString();
+    report.completedAt = new Date().toISOString();
 
     return report;
   }
 
   try {
-    const registryEntry =
-      aerpResolveSheetRendererEntry_(
-        placement.type
-      );
+    const registryEntry = aerpResolveSheetRendererEntry_(placement.type);
 
-    report.renderer =
-      registryEntry.renderer;
+    report.renderer = registryEntry.renderer;
 
-    report.specificationFactory =
-      registryEntry.specificationFactory;
+    report.specificationFactory = registryEntry.specificationFactory;
 
-    const renderer =
-      aerpResolveSheetRendererFunction_(
-        registryEntry.renderer
-      );
+    const renderer = aerpResolveSheetRendererFunction_(registryEntry.renderer);
 
-    const specification =
-      aerpBuildPlacementSpecification_(
-        placement,
-        registryEntry
-      );
+    const specification = aerpBuildPlacementSpecification_(placement, registryEntry);
 
     aerpInvokeLayoutRenderer_(
-  renderer,
-  registryEntry,
-  sheet,
-  placement,
-  specification,
-  renderOptions.parentOptions ||
-  renderOptions
-);
+      renderer,
+      registryEntry,
+      sheet,
+      placement,
+      specification,
+      renderOptions.parentOptions || renderOptions
+    );
 
-    report.ok =
-      true;
+    report.ok = true;
 
-    report.status =
-      'RENDERED';
-
+    report.status = 'RENDERED';
   } catch (error) {
-    report.ok =
-      false;
+    report.ok = false;
 
-    report.status =
-      'FAILED';
+    report.status = 'FAILED';
 
-    report.error =
-      error &&
-      error.message
-        ? error.message
-        : String(error);
+    report.error = error && error.message ? error.message : String(error);
 
-    if (
-      renderOptions.stopOnError ===
-      true
-    ) {
+    if (renderOptions.stopOnError === true) {
       throw error;
     }
   }
 
-  report.completedAt =
-    new Date().toISOString();
+  report.completedAt = new Date().toISOString();
 
   return report;
 }
-
 
 /**
  * Validates the Enterprise Sheet Renderer dependencies.
@@ -484,101 +317,50 @@ function aerpValidateSheetRendererDependencies() {
   const errors = [];
 
   const requiredFunctions = [
-    'aerpRenderDashboardHero',
-    'aerpCreateDashboardHeroSpecification',
-    'aerpRenderDashboardKpi',
-    'aerpCreateDashboardKpiSpecification',
-    'aerpCalculateDashboardLayout'
+    ['aerpRenderDashboardHero', typeof aerpRenderDashboardHero],
+    ['aerpCreateDashboardHeroSpecification', typeof aerpCreateDashboardHeroSpecification],
+    ['aerpRenderDashboardKpi', typeof aerpRenderDashboardKpi],
+    ['aerpCreateDashboardKpiSpecification', typeof aerpCreateDashboardKpiSpecification],
+    ['aerpCalculateDashboardLayout', typeof aerpCalculateDashboardLayout]
   ];
 
-  requiredFunctions.forEach(
-    function(functionName) {
-      try {
-        const resolvedFunction =
-          eval(functionName);
-
-        if (
-          typeof resolvedFunction !==
-          'function'
-        ) {
-          errors.push(
-            'Function not available: ' +
-            functionName
-          );
-        }
-
-      } catch (error) {
-        errors.push(
-          'Function not available: ' +
-          functionName
-        );
-      }
+  requiredFunctions.forEach(function (requiredFunction) {
+    if (requiredFunction[1] !== 'function') {
+      errors.push('Function not available: ' + requiredFunction[0]);
     }
-  );
+  });
 
-  Object.keys(
-    AERP_SHEET_RENDERER_REGISTRY
-  ).forEach(function(componentType) {
-    const registryEntry =
-      AERP_SHEET_RENDERER_REGISTRY[
-        componentType
-      ];
+  Object.keys(AERP_SHEET_RENDERER_REGISTRY).forEach(function (componentType) {
+    const registryEntry = AERP_SHEET_RENDERER_REGISTRY[componentType];
 
-    if (
-      !registryEntry ||
-      typeof registryEntry !== 'object'
-    ) {
-      errors.push(
-        'Invalid renderer registry entry: ' +
-        componentType
-      );
+    if (!registryEntry || typeof registryEntry !== 'object') {
+      errors.push('Invalid renderer registry entry: ' + componentType);
 
       return;
     }
 
-    if (
-      typeof registryEntry.renderer !==
-        'string' ||
-      registryEntry.renderer.trim() === ''
-    ) {
-      errors.push(
-        'Renderer is required for type: ' +
-        componentType
-      );
+    if (typeof registryEntry.renderer !== 'string' || registryEntry.renderer.trim() === '') {
+      errors.push('Renderer is required for type: ' + componentType);
     }
 
     if (
-      typeof registryEntry
-        .specificationFactory !==
-        'string' ||
-      registryEntry
-        .specificationFactory
-        .trim() === ''
+      typeof registryEntry.specificationFactory !== 'string' ||
+      registryEntry.specificationFactory.trim() === ''
     ) {
-      errors.push(
-        'Specification factory is required for type: ' +
-        componentType
-      );
+      errors.push('Specification factory is required for type: ' + componentType);
     }
   });
 
   return {
-    ok:
-      errors.length === 0,
+    ok: errors.length === 0,
 
-    module:
-      'AERP-035',
+    module: 'AERP-035',
 
-    version:
-      AERP_LAYOUT_SHEET_RENDERER_VERSION,
+    version: AERP_LAYOUT_SHEET_RENDERER_VERSION,
 
-    registeredTypes:
-      Object.keys(
-        AERP_SHEET_RENDERER_REGISTRY
-      ),
+    registeredTypes: Object.keys(AERP_SHEET_RENDERER_REGISTRY),
 
-    errors:
-      errors
+    errors: errors
   };
 }
 
@@ -597,64 +379,45 @@ function aerpValidateSheetRendererDependencies() {
  * @return {Object} Normalized options.
  * @private
  */
-function aerpNormalizeSheetRendererOptions_(
-  options
-) {
+function aerpNormalizeSheetRendererOptions_(options) {
   if (
     options !== undefined &&
     options !== null &&
-    (
-      typeof options !== 'object' ||
-      Array.isArray(options)
-    )
+    (typeof options !== 'object' || Array.isArray(options))
   ) {
-    throw new Error(
-      '[AERP-035] Renderer options must be an object.'
-    );
+    throw new Error('[AERP-035] Renderer options must be an object.');
   }
 
-  const source =
-    options || {};
+  const source = options || {};
 
   const normalized = {};
 
-  Object.keys(source)
-    .forEach(function(key) {
-      normalized[key] =
-        source[key];
-    });
+  Object.keys(source).forEach(function (key) {
+    normalized[key] = source[key];
+  });
 
   normalized.clearBeforeRender =
-    source.clearBeforeRender ===
-      undefined
-      ? AERP_SHEET_RENDERER_DEFAULT
-          .clearBeforeRender
+    source.clearBeforeRender === undefined
+      ? AERP_SHEET_RENDERER_DEFAULT.clearBeforeRender
       : source.clearBeforeRender === true;
 
   normalized.activateSheet =
-    source.activateSheet ===
-      undefined
-      ? AERP_SHEET_RENDERER_DEFAULT
-          .activateSheet
+    source.activateSheet === undefined
+      ? AERP_SHEET_RENDERER_DEFAULT.activateSheet
       : source.activateSheet === true;
 
   normalized.flushAfterRender =
-    source.flushAfterRender ===
-      undefined
-      ? AERP_SHEET_RENDERER_DEFAULT
-          .flushAfterRender
+    source.flushAfterRender === undefined
+      ? AERP_SHEET_RENDERER_DEFAULT.flushAfterRender
       : source.flushAfterRender === true;
 
   normalized.stopOnError =
-    source.stopOnError ===
-      undefined
-      ? AERP_SHEET_RENDERER_DEFAULT
-          .stopOnError
+    source.stopOnError === undefined
+      ? AERP_SHEET_RENDERER_DEFAULT.stopOnError
       : source.stopOnError === true;
 
   return normalized;
 }
-
 
 /**
  * Requires a valid Google Sheets sheet.
@@ -663,24 +426,13 @@ function aerpNormalizeSheetRendererOptions_(
  * @return {*} Valid sheet.
  * @private
  */
-function aerpRequireSheetRendererSheet_(
-  sheet
-) {
-  if (
-    !sheet ||
-    typeof sheet.getRange !==
-      'function' ||
-    typeof sheet.getName !==
-      'function'
-  ) {
-    throw new Error(
-      '[AERP-035] A valid Google Sheets sheet is required.'
-    );
+function aerpRequireSheetRendererSheet_(sheet) {
+  if (!sheet || typeof sheet.getRange !== 'function' || typeof sheet.getName !== 'function') {
+    throw new Error('[AERP-035] A valid Google Sheets sheet is required.');
   }
 
   return sheet;
 }
-
 
 /**
  * Requires a valid calculated Layout result.
@@ -689,62 +441,34 @@ function aerpRequireSheetRendererSheet_(
  * @return {Object} Valid calculated Layout.
  * @private
  */
-function aerpRequireCalculatedLayout_(
-  layoutResult
-) {
-  if (
-    !layoutResult ||
-    typeof layoutResult !== 'object' ||
-    Array.isArray(layoutResult)
-  ) {
-    throw new Error(
-      '[AERP-035] A calculated Layout result is required.'
-    );
+function aerpRequireCalculatedLayout_(layoutResult) {
+  if (!layoutResult || typeof layoutResult !== 'object' || Array.isArray(layoutResult)) {
+    throw new Error('[AERP-035] A calculated Layout result is required.');
   }
 
-  if (
-    layoutResult.ok !== true
-  ) {
-    throw new Error(
-      '[AERP-035] Layout result must have ok:true.'
-    );
+  if (layoutResult.ok !== true) {
+    throw new Error('[AERP-035] Layout result must have ok:true.');
   }
 
-  if (
-    !Array.isArray(
-      layoutResult.placements
-    )
-  ) {
-    throw new Error(
-      '[AERP-035] Layout placements must be an array.'
-    );
+  if (!Array.isArray(layoutResult.placements)) {
+    throw new Error('[AERP-035] Layout placements must be an array.');
   }
 
-  layoutResult.placements
-    .forEach(function(placement, index) {
-      try {
-        aerpRequireLayoutPlacement_(
-          placement
-        );
-
-      } catch (error) {
-        throw new Error(
-          '[AERP-035] Invalid placement at index ' +
+  layoutResult.placements.forEach(function (placement, index) {
+    try {
+      aerpRequireLayoutPlacement_(placement);
+    } catch (error) {
+      throw new Error(
+        '[AERP-035] Invalid placement at index ' +
           index +
           ': ' +
-          (
-            error &&
-            error.message
-              ? error.message
-              : String(error)
-          )
-        );
-      }
-    });
+          (error && error.message ? error.message : String(error))
+      );
+    }
+  });
 
   return layoutResult;
 }
-
 
 /**
  * Requires a valid calculated placement.
@@ -753,66 +477,33 @@ function aerpRequireCalculatedLayout_(
  * @return {Object} Valid placement.
  * @private
  */
-function aerpRequireLayoutPlacement_(
-  placement
-) {
-  if (
-    !placement ||
-    typeof placement !== 'object' ||
-    Array.isArray(placement)
-  ) {
-    throw new Error(
-      '[AERP-035] A calculated placement is required.'
-    );
+function aerpRequireLayoutPlacement_(placement) {
+  if (!placement || typeof placement !== 'object' || Array.isArray(placement)) {
+    throw new Error('[AERP-035] A calculated placement is required.');
   }
 
-  if (
-    typeof placement.id !== 'string' ||
-    placement.id.trim() === ''
-  ) {
-    throw new Error(
-      '[AERP-035] Placement id is required.'
-    );
+  if (typeof placement.id !== 'string' || placement.id.trim() === '') {
+    throw new Error('[AERP-035] Placement id is required.');
   }
 
-  if (
-    typeof placement.type !== 'string' ||
-    placement.type.trim() === ''
-  ) {
-    throw new Error(
-      '[AERP-035] Placement type is required: ' +
-      placement.id
-    );
+  if (typeof placement.type !== 'string' || placement.type.trim() === '') {
+    throw new Error('[AERP-035] Placement type is required: ' + placement.id);
   }
 
-  if (
-    typeof placement.rangeA1 !==
-      'string' ||
-    placement.rangeA1.trim() === ''
-  ) {
-    throw new Error(
-      '[AERP-035] Placement rangeA1 is required: ' +
-      placement.id
-    );
+  if (typeof placement.rangeA1 !== 'string' || placement.rangeA1.trim() === '') {
+    throw new Error('[AERP-035] Placement rangeA1 is required: ' + placement.id);
   }
 
   if (
     !placement.component ||
-    typeof placement.component !==
-      'object' ||
-    Array.isArray(
-      placement.component
-    )
+    typeof placement.component !== 'object' ||
+    Array.isArray(placement.component)
   ) {
-    throw new Error(
-      '[AERP-035] Component definition is required: ' +
-      placement.id
-    );
+    throw new Error('[AERP-035] Component definition is required: ' + placement.id);
   }
 
   return placement;
 }
-
 
 /**
  * Resolves a Renderer Registry entry.
@@ -821,40 +512,23 @@ function aerpRequireLayoutPlacement_(
  * @return {Object} Registry entry.
  * @private
  */
-function aerpResolveSheetRendererEntry_(
-  componentType
-) {
-  const normalizedType =
-    String(
-      componentType || ''
-    )
-      .trim()
-      .toLowerCase();
+function aerpResolveSheetRendererEntry_(componentType) {
+  const normalizedType = String(componentType || '')
+    .trim()
+    .toLowerCase();
 
   if (!normalizedType) {
-    throw new Error(
-      '[AERP-035] Component type is required.'
-    );
+    throw new Error('[AERP-035] Component type is required.');
   }
 
-  const registryEntry =
-    AERP_SHEET_RENDERER_REGISTRY[
-      normalizedType
-    ];
+  const registryEntry = AERP_SHEET_RENDERER_REGISTRY[normalizedType];
 
-  if (
-    !registryEntry ||
-    typeof registryEntry !== 'object'
-  ) {
-    throw new Error(
-      '[AERP-035] Renderer not registered for component type: ' +
-      normalizedType
-    );
+  if (!registryEntry || typeof registryEntry !== 'object') {
+    throw new Error('[AERP-035] Renderer not registered for component type: ' + normalizedType);
   }
 
   return registryEntry;
 }
-
 
 /**
  * Resolves a globally available rendering function.
@@ -863,44 +537,34 @@ function aerpResolveSheetRendererEntry_(
  * @return {Function} Resolved function.
  * @private
  */
-function aerpResolveSheetRendererFunction_(
-  functionName
-) {
-  const normalizedName =
-    String(
-      functionName || ''
-    ).trim();
+function aerpResolveSheetRendererFunction_(functionName) {
+  const normalizedName = String(functionName || '').trim();
 
   if (!normalizedName) {
-    throw new Error(
-      '[AERP-035] Renderer function name is required.'
-    );
+    throw new Error('[AERP-035] Renderer function name is required.');
   }
 
   let resolvedFunction = null;
 
-  try {
-    resolvedFunction =
-      eval(normalizedName);
-
-  } catch (error) {
-    resolvedFunction =
-      null;
+  switch (normalizedName) {
+    case 'aerpRenderDashboardHero':
+      resolvedFunction =
+        typeof aerpRenderDashboardHero === 'function' ? aerpRenderDashboardHero : null;
+      break;
+    case 'aerpRenderDashboardKpi':
+      resolvedFunction =
+        typeof aerpRenderDashboardKpi === 'function' ? aerpRenderDashboardKpi : null;
+      break;
+    default:
+      resolvedFunction = null;
   }
 
-  if (
-    typeof resolvedFunction !==
-      'function'
-  ) {
-    throw new Error(
-      '[AERP-035] Renderer function is not available: ' +
-      normalizedName
-    );
+  if (typeof resolvedFunction !== 'function') {
+    throw new Error('[AERP-035] Renderer function is not available: ' + normalizedName);
   }
 
   return resolvedFunction;
 }
-
 
 /**
  * Resolves a globally available specification factory.
@@ -909,44 +573,38 @@ function aerpResolveSheetRendererFunction_(
  * @return {Function} Resolved factory.
  * @private
  */
-function aerpResolveSpecificationFactory_(
-  functionName
-) {
-  const normalizedName =
-    String(
-      functionName || ''
-    ).trim();
+function aerpResolveSpecificationFactory_(functionName) {
+  const normalizedName = String(functionName || '').trim();
 
   if (!normalizedName) {
-    throw new Error(
-      '[AERP-035] Specification factory name is required.'
-    );
+    throw new Error('[AERP-035] Specification factory name is required.');
   }
 
   let resolvedFactory = null;
 
-  try {
-    resolvedFactory =
-      eval(normalizedName);
-
-  } catch (error) {
-    resolvedFactory =
-      null;
+  switch (normalizedName) {
+    case 'aerpCreateDashboardHeroSpecification':
+      resolvedFactory =
+        typeof aerpCreateDashboardHeroSpecification === 'function'
+          ? aerpCreateDashboardHeroSpecification
+          : null;
+      break;
+    case 'aerpCreateDashboardKpiSpecification':
+      resolvedFactory =
+        typeof aerpCreateDashboardKpiSpecification === 'function'
+          ? aerpCreateDashboardKpiSpecification
+          : null;
+      break;
+    default:
+      resolvedFactory = null;
   }
 
-  if (
-    typeof resolvedFactory !==
-      'function'
-  ) {
-    throw new Error(
-      '[AERP-035] Specification factory is not available: ' +
-      normalizedName
-    );
+  if (typeof resolvedFactory !== 'function') {
+    throw new Error('[AERP-035] Specification factory is not available: ' + normalizedName);
   }
 
   return resolvedFactory;
 }
-
 
 /**
  * Builds the normalized specification for one placement.
@@ -973,93 +631,58 @@ function aerpResolveSpecificationFactory_(
  * @return {Object} Component specification.
  * @private
  */
-function aerpBuildPlacementSpecification_(
-  placement,
-  registryEntry
-) {
-  const component =
-    placement.component || {};
+function aerpBuildPlacementSpecification_(placement, registryEntry) {
+  const component = placement.component || {};
 
   if (
     component.specification &&
-    typeof component.specification ===
-      'object' &&
-    !Array.isArray(
-      component.specification
-    )
+    typeof component.specification === 'object' &&
+    !Array.isArray(component.specification)
   ) {
     return component.specification;
   }
 
-  const factory =
-    aerpResolveSpecificationFactory_(
-      registryEntry
-        .specificationFactory
-    );
+  const factory = aerpResolveSpecificationFactory_(registryEntry.specificationFactory);
 
-  let factoryInput =
-    component;
+  let factoryInput = component;
 
   if (
     component.config &&
-    typeof component.config ===
-      'object' &&
+    typeof component.config === 'object' &&
     !Array.isArray(component.config)
   ) {
-    factoryInput =
-      component.config;
-
+    factoryInput = component.config;
   } else if (
     component.metrics &&
-    typeof component.metrics ===
-      'object' &&
+    typeof component.metrics === 'object' &&
     !Array.isArray(component.metrics)
   ) {
-    factoryInput =
-      component.metrics;
-
+    factoryInput = component.metrics;
   } else if (
     component.properties &&
-    typeof component.properties ===
-      'object' &&
-    !Array.isArray(
-      component.properties
-    )
+    typeof component.properties === 'object' &&
+    !Array.isArray(component.properties)
   ) {
-    factoryInput =
-      component.properties;
-
+    factoryInput = component.properties;
   } else if (
     component.data &&
-    typeof component.data ===
-      'object' &&
+    typeof component.data === 'object' &&
     !Array.isArray(component.data)
   ) {
-    factoryInput =
-      component.data;
+    factoryInput = component.data;
   }
 
-  const specification =
-    factory(
-      factoryInput
-    );
+  const specification = factory(factoryInput);
 
-  if (
-    !specification ||
-    typeof specification !==
-      'object' ||
-    Array.isArray(specification)
-  ) {
+  if (!specification || typeof specification !== 'object' || Array.isArray(specification)) {
     throw new Error(
       '[AERP-035] Specification factory returned an invalid result: ' +
-      registryEntry
-        .specificationFactory
+        registryEntry.specificationFactory
     );
   }
 
   return specification;
 }
-
 
 /**
  * Invokes a component renderer using its supported signature.
@@ -1089,24 +712,12 @@ function aerpInvokeLayoutRenderer_(
   specification,
   options
 ) {
-  if (
-    registryEntry.renderer ===
-      'aerpRenderDashboardHero'
-  ) {
-    return renderer(
-      sheet,
-      specification
-    );
+  if (registryEntry.renderer === 'aerpRenderDashboardHero') {
+    return renderer(sheet, specification);
   }
 
-  return renderer(
-    sheet,
-    placement.rangeA1,
-    specification,
-    options || {}
-  );
+  return renderer(sheet, placement.rangeA1, specification, options || {});
 }
-
 
 /**
  * Prepares the calculated Dashboard canvas before rendering.
@@ -1120,93 +731,48 @@ function aerpInvokeLayoutRenderer_(
  * @return {*} Prepared sheet.
  * @private
  */
-function aerpPrepareSheetForLayoutRender_(
-  sheet,
-  layoutResult,
-  options
-) {
-  aerpRequireSheetRendererSheet_(
-    sheet
-  );
+function aerpPrepareSheetForLayoutRender_(sheet, layoutResult, options) {
+  aerpRequireSheetRendererSheet_(sheet);
 
-  aerpRequireCalculatedLayout_(
-    layoutResult
-  );
+  aerpRequireCalculatedLayout_(layoutResult);
 
-  const placements =
-    layoutResult.placements;
+  const placements = layoutResult.placements;
 
-  if (
-    placements.length === 0
-  ) {
+  if (placements.length === 0) {
     return sheet;
   }
 
-  const maximumRow =
-    Math.max.apply(
-      null,
-      placements.map(
-        function(placement) {
-          return Number(
-            placement.endRow || 1
-          );
-        }
-      )
-    );
-
-  const maximumColumn =
-    Math.max.apply(
-      null,
-      placements.map(
-        function(placement) {
-          return Number(
-            placement.endColumn || 1
-          );
-        }
-      )
-    );
-
-  aerpEnsureSheetRendererSize_(
-    sheet,
-    maximumRow,
-    maximumColumn
+  const maximumRow = Math.max.apply(
+    null,
+    placements.map(function (placement) {
+      return Number(placement.endRow || 1);
+    })
   );
 
-  const canvas =
-    sheet.getRange(
-      1,
-      1,
-      maximumRow,
-      maximumColumn
-    );
+  const maximumColumn = Math.max.apply(
+    null,
+    placements.map(function (placement) {
+      return Number(placement.endColumn || 1);
+    })
+  );
+
+  aerpEnsureSheetRendererSize_(sheet, maximumRow, maximumColumn);
+
+  const canvas = sheet.getRange(1, 1, maximumRow, maximumColumn);
 
   canvas.breakApart();
   canvas.clear();
 
-  if (
-    typeof sheet
-      .setConditionalFormatRules ===
-      'function'
-  ) {
-    sheet.setConditionalFormatRules(
-      []
-    );
+  if (typeof sheet.setConditionalFormatRules === 'function') {
+    sheet.setConditionalFormatRules([]);
   }
 
-  if (
-    typeof sheet
-      .setHiddenGridlines ===
-      'function' &&
-    options.hiddenGridlines !== false
-  ) {
-    sheet.setHiddenGridlines(
-      true
-    );
+  if (typeof sheet.setHiddenGridlines === 'function' && options.hiddenGridlines !== false) {
+    sheet.setHiddenGridlines(true);
   }
 
   return sheet;
 }
-
 
 /**
  * Ensures that the target sheet has enough rows and columns.
@@ -1217,50 +783,25 @@ function aerpPrepareSheetForLayoutRender_(
  * @return {*} Resized sheet.
  * @private
  */
-function aerpEnsureSheetRendererSize_(
-  sheet,
-  requiredRows,
-  requiredColumns
-) {
-  const rows =
-    Number(requiredRows);
+function aerpEnsureSheetRendererSize_(sheet, requiredRows, requiredColumns) {
+  const rows = Number(requiredRows);
 
-  const columns =
-    Number(requiredColumns);
+  const columns = Number(requiredColumns);
 
-  if (
-    !Number.isInteger(rows) ||
-    rows < 1 ||
-    !Number.isInteger(columns) ||
-    columns < 1
-  ) {
-    throw new Error(
-      '[AERP-035] Required sheet dimensions must be positive integers.'
-    );
+  if (!Number.isInteger(rows) || rows < 1 || !Number.isInteger(columns) || columns < 1) {
+    throw new Error('[AERP-035] Required sheet dimensions must be positive integers.');
   }
 
-  const currentRows =
-    sheet.getMaxRows();
+  const currentRows = sheet.getMaxRows();
 
-  const currentColumns =
-    sheet.getMaxColumns();
+  const currentColumns = sheet.getMaxColumns();
 
-  if (
-    currentRows < rows
-  ) {
-    sheet.insertRowsAfter(
-      currentRows,
-      rows - currentRows
-    );
+  if (currentRows < rows) {
+    sheet.insertRowsAfter(currentRows, rows - currentRows);
   }
 
-  if (
-    currentColumns < columns
-  ) {
-    sheet.insertColumnsAfter(
-      currentColumns,
-      columns - currentColumns
-    );
+  if (currentColumns < columns) {
+    sheet.insertColumnsAfter(currentColumns, columns - currentColumns);
   }
 
   return sheet;
@@ -1279,94 +820,58 @@ function aerpEnsureSheetRendererSize_(
  * @return {Object} Test result.
  */
 function testLayoutSheetRendererDependencies() {
-  const validation =
-    aerpValidateSheetRendererDependencies();
+  const validation = aerpValidateSheetRendererDependencies();
 
   const tests = {
-    validationPassed:
-      validation.ok === true,
+    validationPassed: validation.ok === true,
 
-    heroRegistered:
-      validation.registeredTypes
-        .indexOf('hero') !== -1,
+    heroRegistered: validation.registeredTypes.indexOf('hero') !== -1,
 
-    kpiRegistered:
-      validation.registeredTypes
-        .indexOf('kpi') !== -1,
+    kpiRegistered: validation.registeredTypes.indexOf('kpi') !== -1,
 
-    heroRendererAvailable:
-      typeof aerpRenderDashboardHero ===
-        'function',
+    heroRendererAvailable: typeof aerpRenderDashboardHero === 'function',
 
-    heroFactoryAvailable:
-      typeof aerpCreateDashboardHeroSpecification ===
-        'function',
+    heroFactoryAvailable: typeof aerpCreateDashboardHeroSpecification === 'function',
 
-    kpiRendererAvailable:
-      typeof aerpRenderDashboardKpi ===
-        'function',
+    kpiRendererAvailable: typeof aerpRenderDashboardKpi === 'function',
 
-    kpiFactoryAvailable:
-      typeof aerpCreateDashboardKpiSpecification ===
-        'function',
+    kpiFactoryAvailable: typeof aerpCreateDashboardKpiSpecification === 'function',
 
-    layoutEngineAvailable:
-      typeof aerpCalculateDashboardLayout ===
-        'function'
+    layoutEngineAvailable: typeof aerpCalculateDashboardLayout === 'function'
   };
 
-  const testValues =
-    Object.keys(
-      tests
-    ).map(function(testName) {
-      return tests[
-        testName
-      ];
-    });
+  const testValues = Object.keys(tests).map(function (testName) {
+    return tests[testName];
+  });
 
   const result = {
     ok:
       validation.errors.length === 0 &&
-      testValues.every(function(value) {
+      testValues.every(function (value) {
         return value === true;
       }),
 
-    module:
-      'AERP-035',
+    module: 'AERP-035',
 
-    version:
-      AERP_LAYOUT_SHEET_RENDERER_VERSION,
+    version: AERP_LAYOUT_SHEET_RENDERER_VERSION,
 
-    phase:
-      'Dependency Validation',
+    phase: 'Dependency Validation',
 
-    tests:
-      tests,
+    tests: tests,
 
-    validation:
-      validation,
+    validation: validation,
 
-    errors:
-      validation.errors
+    errors: validation.errors
   };
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   if (!result.ok) {
-    throw new Error(
-      'Sheet Renderer dependencies no superó todas las pruebas.'
-    );
+    throw new Error('Sheet Renderer dependencies no superó todas las pruebas.');
   }
 
   return result;
 }
-
 
 /**
  * Tests one KPI placement independently.
@@ -1380,17 +885,13 @@ function testLayoutSheetRendererPlacement() {
   const result = {
     ok: false,
 
-    module:
-      'AERP-035',
+    module: 'AERP-035',
 
-    version:
-      AERP_LAYOUT_SHEET_RENDERER_VERSION,
+    version: AERP_LAYOUT_SHEET_RENDERER_VERSION,
 
-    phase:
-      'Single Placement Rendering',
+    phase: 'Single Placement Rendering',
 
-    sheet:
-      'AERP_TEST_LAYOUT_RENDERER_KPI',
+    sheet: 'AERP_TEST_LAYOUT_RENDERER_KPI',
 
     tests: {
       sheetCreated: false,
@@ -1405,268 +906,153 @@ function testLayoutSheetRendererPlacement() {
       reportCompleted: false
     },
 
-    placementReport:
-      null,
+    placementReport: null,
 
     errors: []
   };
 
   try {
-    const ss =
-      aerpGetSpreadsheet();
+    const ss = aerpGetSpreadsheet();
 
-    const sheetName =
-      result.sheet;
+    const sheetName = result.sheet;
 
-    const existingSheet =
-      ss.getSheetByName(
-        sheetName
-      );
+    const existingSheet = ss.getSheetByName(sheetName);
 
     if (existingSheet) {
-      ss.deleteSheet(
-        existingSheet
-      );
+      ss.deleteSheet(existingSheet);
 
       SpreadsheetApp.flush();
     }
 
-    const sheet =
-      ss.insertSheet(
-        sheetName
-      );
+    const sheet = ss.insertSheet(sheetName);
 
-    result.tests.sheetCreated =
-      Boolean(sheet);
+    result.tests.sheetCreated = Boolean(sheet);
 
-    aerpEnsureSheetRendererSize_(
-      sheet,
-      10,
-      6
-    );
+    aerpEnsureSheetRendererSize_(sheet, 10, 6);
 
-    sheet.setHiddenGridlines(
-      true
-    );
+    sheet.setHiddenGridlines(true);
 
-    sheet.setColumnWidths(
-      1,
-      5,
-      95
-    );
+    sheet.setColumnWidths(1, 5, 95);
 
-    sheet.setRowHeights(
-      1,
-      8,
-      32
-    );
+    sheet.setRowHeights(1, 8, 32);
 
     const placement = {
-      id:
-        'renderer-kpi-tables',
+      id: 'renderer-kpi-tables',
 
-      type:
-        'kpi',
+      type: 'kpi',
 
       component: {
-        id:
-          'renderer-kpi-tables',
+        id: 'renderer-kpi-tables',
 
-        type:
-          'kpi',
+        type: 'kpi',
 
         config: {
-          id:
-            'renderer-kpi-tables',
+          id: 'renderer-kpi-tables',
 
-          icon:
-            '📄',
+          icon: '📄',
 
-          title:
-            'TABLAS',
+          title: 'TABLAS',
 
-          value:
-            23,
+          value: 23,
 
-          subtitle:
-            'Tablas registradas',
+          subtitle: 'Tablas registradas',
 
-          trend:
-            '+2',
+          trend: '+2',
 
-          trendDirection:
-            'up',
+          trendDirection: 'up',
 
-          status:
-            'Actualizado',
+          status: 'Actualizado',
 
           options: {
-            titleFontSize:
-              11,
+            titleFontSize: 11,
 
-            valueFontSize:
-              28,
+            valueFontSize: 28,
 
-            borderColor:
-              '#E5E7EB'
+            borderColor: '#E5E7EB'
           }
         }
       },
 
-      region:
-        'main',
+      region: 'main',
 
-      order:
-        10,
+      order: 10,
 
-      fullWidth:
-        false,
+      fullWidth: false,
 
-      startRow:
-        1,
+      startRow: 1,
 
-      endRow:
-        8,
+      endRow: 8,
 
-      startColumn:
-        1,
+      startColumn: 1,
 
-      endColumn:
-        5,
+      endColumn: 5,
 
-      rowSpan:
-        8,
+      rowSpan: 8,
 
-      columnSpan:
-        5,
+      columnSpan: 5,
 
-      rangeA1:
-        'A1:E8'
+      rangeA1: 'A1:E8'
     };
 
-    result.tests.placementAccepted =
-      aerpRequireLayoutPlacement_(
-        placement
-      ) === placement;
+    result.tests.placementAccepted = aerpRequireLayoutPlacement_(placement) === placement;
 
-    const placementReport =
-      aerpRenderLayoutPlacement(
-        sheet,
-        placement,
-        {
-          stopOnError:
-            true,
+    const placementReport = aerpRenderLayoutPlacement(sheet, placement, {
+      stopOnError: true,
 
-          activateSheet:
-            false,
+      activateSheet: false,
 
-          flushAfterRender:
-            true
-        }
-      );
+      flushAfterRender: true
+    });
 
-    result.placementReport =
-      placementReport;
+    result.placementReport = placementReport;
 
     SpreadsheetApp.flush();
 
-    result.tests.rendererResolved =
-      placementReport.renderer ===
-        'aerpRenderDashboardKpi';
+    result.tests.rendererResolved = placementReport.renderer === 'aerpRenderDashboardKpi';
 
     result.tests.factoryResolved =
-      placementReport
-        .specificationFactory ===
-        'aerpCreateDashboardKpiSpecification';
+      placementReport.specificationFactory === 'aerpCreateDashboardKpiSpecification';
 
     result.tests.placementRendered =
-      placementReport.ok === true &&
-      placementReport.status ===
-        'RENDERED';
+      placementReport.ok === true && placementReport.status === 'RENDERED';
 
-    const displayText =
-      sheet
-        .getRange(
-          'A1:E8'
-        )
-        .getDisplayValues()
-        .flat()
-        .join(' ');
+    const displayText = sheet.getRange('A1:E8').getDisplayValues().flat().join(' ');
 
-    result.tests.titleRendered =
-      displayText.indexOf(
-        'TABLAS'
-      ) !== -1;
+    result.tests.titleRendered = displayText.indexOf('TABLAS') !== -1;
 
-    result.tests.valueRendered =
-      displayText.indexOf(
-        '23'
-      ) !== -1;
+    result.tests.valueRendered = displayText.indexOf('23') !== -1;
 
-    result.tests.subtitleRendered =
-      displayText.indexOf(
-        'Tablas registradas'
-      ) !== -1;
+    result.tests.subtitleRendered = displayText.indexOf('Tablas registradas') !== -1;
 
     result.tests.footerRendered =
-      displayText.indexOf(
-        '+2'
-      ) !== -1 &&
-      displayText.indexOf(
-        'Actualizado'
-      ) !== -1;
+      displayText.indexOf('+2') !== -1 && displayText.indexOf('Actualizado') !== -1;
 
     result.tests.reportCompleted =
-      typeof placementReport
-        .startedAt ===
-        'string' &&
-      typeof placementReport
-        .completedAt ===
-        'string' &&
-      placementReport.completedAt
-        .length > 0;
-
+      typeof placementReport.startedAt === 'string' &&
+      typeof placementReport.completedAt === 'string' &&
+      placementReport.completedAt.length > 0;
   } catch (error) {
-    result.errors.push(
-      error &&
-      error.message
-        ? error.message
-        : String(error)
-    );
+    result.errors.push(error && error.message ? error.message : String(error));
   }
 
-  const testValues =
-    Object.keys(
-      result.tests
-    ).map(function(testName) {
-      return result.tests[
-        testName
-      ];
-    });
+  const testValues = Object.keys(result.tests).map(function (testName) {
+    return result.tests[testName];
+  });
 
   result.ok =
     result.errors.length === 0 &&
-    testValues.every(function(value) {
+    testValues.every(function (value) {
       return value === true;
     });
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   if (!result.ok) {
-    throw new Error(
-      'Single Placement Rendering no superó todas las pruebas.'
-    );
+    throw new Error('Single Placement Rendering no superó todas las pruebas.');
   }
 
   return result;
 }
-
 
 /**
  * Tests a complete calculated Dashboard Layout.
@@ -1693,17 +1079,13 @@ function testLayoutSheetRendererLayout() {
   const result = {
     ok: false,
 
-    module:
-      'AERP-035',
+    module: 'AERP-035',
 
-    version:
-      AERP_LAYOUT_SHEET_RENDERER_VERSION,
+    version: AERP_LAYOUT_SHEET_RENDERER_VERSION,
 
-    phase:
-      'Complete Layout Rendering',
+    phase: 'Complete Layout Rendering',
 
-    sheet:
-      'AERP_TEST_LAYOUT_RENDERER',
+    sheet: 'AERP_TEST_LAYOUT_RENDERER',
 
     tests: {
       sheetCreated: false,
@@ -1720,407 +1102,244 @@ function testLayoutSheetRendererLayout() {
       reportCompleted: false
     },
 
-    layoutResult:
-      null,
+    layoutResult: null,
 
-    renderingReport:
-      null,
+    renderingReport: null,
 
     errors: []
   };
 
   try {
-    const ss =
-      aerpGetSpreadsheet();
+    const ss = aerpGetSpreadsheet();
 
-    const sheetName =
-      result.sheet;
+    const sheetName = result.sheet;
 
-    const existingSheet =
-      ss.getSheetByName(
-        sheetName
-      );
+    const existingSheet = ss.getSheetByName(sheetName);
 
     if (existingSheet) {
-      ss.deleteSheet(
-        existingSheet
-      );
+      ss.deleteSheet(existingSheet);
 
       SpreadsheetApp.flush();
     }
 
-    const sheet =
-      ss.insertSheet(
-        sheetName
-      );
+    const sheet = ss.insertSheet(sheetName);
 
-    result.tests.sheetCreated =
-      Boolean(sheet);
+    result.tests.sheetCreated = Boolean(sheet);
 
-    const layout =
-      aerpCreateDashboardLayout({
-        id:
-          'sheet-renderer-layout-test',
+    const layout = aerpCreateDashboardLayout({
+      id: 'sheet-renderer-layout-test',
 
-        columns:
-          12,
+      columns: 12,
 
-        gutterColumns:
-          0,
+      gutterColumns: 0,
 
-        gutterRows:
-          1,
+      gutterRows: 1,
 
-        marginTop:
-          0,
+      marginTop: 0,
 
-        marginLeft:
-          0
-      });
+      marginLeft: 0
+    });
 
-    result.tests.layoutCreated =
-      Boolean(
-        layout &&
-        layout.id ===
-          'sheet-renderer-layout-test'
-      );
+    result.tests.layoutCreated = Boolean(layout && layout.id === 'sheet-renderer-layout-test');
 
     aerpAddLayoutComponent(
       layout,
       {
-        id:
-          'kpi-tables',
+        id: 'kpi-tables',
 
-        type:
-          'kpi',
+        type: 'kpi',
 
         config: {
-          id:
-            'kpi-tables',
+          id: 'kpi-tables',
 
-          icon:
-            '📄',
+          icon: '📄',
 
-          title:
-            'TABLAS',
+          title: 'TABLAS',
 
-          value:
-            23,
+          value: 23,
 
-          subtitle:
-            'Tablas registradas',
+          subtitle: 'Tablas registradas',
 
-          trend:
-            '+2',
+          trend: '+2',
 
-          trendDirection:
-            'up',
+          trendDirection: 'up',
 
-          status:
-            'Actualizado',
+          status: 'Actualizado',
 
           options: {
-            valueFontSize:
-              28,
+            valueFontSize: 28,
 
-            borderColor:
-              '#E5E7EB'
+            borderColor: '#E5E7EB'
           }
         }
       },
       {
-        type:
-          'kpi',
+        type: 'kpi',
 
-        columnSpan:
-          6,
+        columnSpan: 6,
 
-        rowSpan:
-          8,
+        rowSpan: 8,
 
-        order:
-          10,
+        order: 10,
 
-        region:
-          'main'
+        region: 'main'
       }
     );
 
     aerpAddLayoutComponent(
       layout,
       {
-        id:
-          'kpi-columns',
+        id: 'kpi-columns',
 
-        type:
-          'kpi',
+        type: 'kpi',
 
         config: {
-          id:
-            'kpi-columns',
+          id: 'kpi-columns',
 
-          icon:
-            '🧩',
+          icon: '🧩',
 
-          title:
-            'COLUMNAS',
+          title: 'COLUMNAS',
 
-          value:
-            276,
+          value: 276,
 
-          subtitle:
-            'Columnas registradas',
+          subtitle: 'Columnas registradas',
 
-          trend:
-            '+12',
+          trend: '+12',
 
-          trendDirection:
-            'up',
+          trendDirection: 'up',
 
-          status:
-            'Actualizado',
+          status: 'Actualizado',
 
           options: {
-            valueFontSize:
-              28,
+            valueFontSize: 28,
 
-            borderColor:
-              '#E5E7EB'
+            borderColor: '#E5E7EB'
           }
         }
       },
       {
-        type:
-          'kpi',
+        type: 'kpi',
 
-        columnSpan:
-          6,
+        columnSpan: 6,
 
-        rowSpan:
-          8,
+        rowSpan: 8,
 
-        order:
-          20,
+        order: 20,
 
-        region:
-          'main'
+        region: 'main'
       }
     );
 
     aerpAddLayoutComponent(
       layout,
       {
-        id:
-          'kpi-hidden',
+        id: 'kpi-hidden',
 
-        type:
-          'kpi',
+        type: 'kpi',
 
-        visible:
-          false,
+        visible: false,
 
         config: {
-          id:
-            'kpi-hidden',
+          id: 'kpi-hidden',
 
-          title:
-            'OCULTO',
+          title: 'OCULTO',
 
-          value:
-            0
+          value: 0
         }
       },
       {
-        type:
-          'kpi',
+        type: 'kpi',
 
-        columnSpan:
-          6,
+        columnSpan: 6,
 
-        rowSpan:
-          8,
+        rowSpan: 8,
 
-        order:
-          30,
+        order: 30,
 
-        region:
-          'main'
+        region: 'main'
       }
     );
 
-    const layoutResult =
-      aerpCalculateDashboardLayout(
-        layout
-      );
+    const layoutResult = aerpCalculateDashboardLayout(layout);
 
-    result.layoutResult =
-      layoutResult;
+    result.layoutResult = layoutResult;
 
     result.tests.placementsCalculated =
-      layoutResult.ok === true &&
-      layoutResult.componentCount === 3;
+      layoutResult.ok === true && layoutResult.componentCount === 3;
 
     result.tests.rangesCalculated =
-      layoutResult.placements[0]
-        .rangeA1 ===
-        'A1:F8' &&
-      layoutResult.placements[1]
-        .rangeA1 ===
-        'G1:L8' &&
-      layoutResult.placements[2]
-        .rangeA1 ===
-        'A10:F17';
+      layoutResult.placements[0].rangeA1 === 'A1:F8' &&
+      layoutResult.placements[1].rangeA1 === 'G1:L8' &&
+      layoutResult.placements[2].rangeA1 === 'A10:F17';
 
-    sheet.setColumnWidths(
-      1,
-      12,
-      95
+    sheet.setColumnWidths(1, 12, 95);
+
+    sheet.setRowHeights(1, 17, 32);
+
+    const renderingReport = aerpRenderDashboardLayout(sheet, layoutResult, {
+      clearBeforeRender: true,
+
+      activateSheet: false,
+
+      flushAfterRender: true,
+
+      stopOnError: true,
+
+      hiddenGridlines: true
+    });
+
+    result.renderingReport = renderingReport;
+
+    result.tests.renderingReportCreated = Boolean(
+      renderingReport && renderingReport.layoutId === 'sheet-renderer-layout-test'
     );
 
-    sheet.setRowHeights(
-      1,
-      17,
-      32
-    );
-
-    const renderingReport =
-      aerpRenderDashboardLayout(
-        sheet,
-        layoutResult,
-        {
-          clearBeforeRender:
-            true,
-
-          activateSheet:
-            false,
-
-          flushAfterRender:
-            true,
-
-          stopOnError:
-            true,
-
-          hiddenGridlines:
-            true
-        }
-      );
-
-    result.renderingReport =
-      renderingReport;
-
-    result.tests.renderingReportCreated =
-      Boolean(
-        renderingReport &&
-        renderingReport.layoutId ===
-          'sheet-renderer-layout-test'
-      );
-
-    result.tests.twoComponentsRendered =
-      renderingReport.renderedCount ===
-        2;
+    result.tests.twoComponentsRendered = renderingReport.renderedCount === 2;
 
     result.tests.hiddenComponentSkipped =
-      renderingReport.skippedCount ===
-        1 &&
-      renderingReport.placements[2]
-        .status ===
-        'SKIPPED';
+      renderingReport.skippedCount === 1 && renderingReport.placements[2].status === 'SKIPPED';
 
     result.tests.noComponentsFailed =
-      renderingReport.failedCount ===
-        0 &&
-      renderingReport.errors.length ===
-        0;
+      renderingReport.failedCount === 0 && renderingReport.errors.length === 0;
 
-    const firstKpiText =
-      sheet
-        .getRange(
-          'A1:F8'
-        )
-        .getDisplayValues()
-        .flat()
-        .join(' ');
+    const firstKpiText = sheet.getRange('A1:F8').getDisplayValues().flat().join(' ');
 
-    const secondKpiText =
-      sheet
-        .getRange(
-          'G1:L8'
-        )
-        .getDisplayValues()
-        .flat()
-        .join(' ');
+    const secondKpiText = sheet.getRange('G1:L8').getDisplayValues().flat().join(' ');
 
     result.tests.firstKpiRendered =
-      firstKpiText.indexOf(
-        'TABLAS'
-      ) !== -1 &&
-      firstKpiText.indexOf(
-        '23'
-      ) !== -1;
+      firstKpiText.indexOf('TABLAS') !== -1 && firstKpiText.indexOf('23') !== -1;
 
     result.tests.secondKpiRendered =
-      secondKpiText.indexOf(
-        'COLUMNAS'
-      ) !== -1 &&
-      secondKpiText.indexOf(
-        '276'
-      ) !== -1;
+      secondKpiText.indexOf('COLUMNAS') !== -1 && secondKpiText.indexOf('276') !== -1;
 
-    result.tests.canvasPrepared =
-      sheet.getMaxRows() >=
-        17 &&
-      sheet.getMaxColumns() >=
-        12;
+    result.tests.canvasPrepared = sheet.getMaxRows() >= 17 && sheet.getMaxColumns() >= 12;
 
     result.tests.reportCompleted =
       renderingReport.ok === true &&
-      typeof renderingReport
-        .completedAt ===
-        'string' &&
-      renderingReport.completedAt
-        .length > 0;
-
+      typeof renderingReport.completedAt === 'string' &&
+      renderingReport.completedAt.length > 0;
   } catch (error) {
-    result.errors.push(
-      error &&
-      error.message
-        ? error.message
-        : String(error)
-    );
+    result.errors.push(error && error.message ? error.message : String(error));
   }
 
-  const testValues =
-    Object.keys(
-      result.tests
-    ).map(function(testName) {
-      return result.tests[
-        testName
-      ];
-    });
+  const testValues = Object.keys(result.tests).map(function (testName) {
+    return result.tests[testName];
+  });
 
   result.ok =
     result.errors.length === 0 &&
-    testValues.every(function(value) {
+    testValues.every(function (value) {
       return value === true;
     });
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   if (!result.ok) {
-    throw new Error(
-      'Complete Layout Rendering no superó todas las pruebas.'
-    );
+    throw new Error('Complete Layout Rendering no superó todas las pruebas.');
   }
 
   return result;
 }
-
 
 /**
  * Tests controlled renderer failures.
@@ -2135,14 +1354,11 @@ function testLayoutSheetRendererErrors() {
   const result = {
     ok: false,
 
-    module:
-      'AERP-035',
+    module: 'AERP-035',
 
-    version:
-      AERP_LAYOUT_SHEET_RENDERER_VERSION,
+    version: AERP_LAYOUT_SHEET_RENDERER_VERSION,
 
-    phase:
-      'Renderer Error Handling',
+    phase: 'Renderer Error Handling',
 
     tests: {
       sheetCreated: false,
@@ -2151,156 +1367,96 @@ function testLayoutSheetRendererErrors() {
       stopOnErrorFalseRespected: false
     },
 
-    errorReport:
-      null,
+    errorReport: null,
 
     errors: []
   };
 
   try {
-    const ss =
-      aerpGetSpreadsheet();
+    const ss = aerpGetSpreadsheet();
 
-    const sheetName =
-      'AERP_TEST_LAYOUT_RENDERER_ERROR';
+    const sheetName = 'AERP_TEST_LAYOUT_RENDERER_ERROR';
 
-    const existingSheet =
-      ss.getSheetByName(
-        sheetName
-      );
+    const existingSheet = ss.getSheetByName(sheetName);
 
     if (existingSheet) {
-      ss.deleteSheet(
-        existingSheet
-      );
+      ss.deleteSheet(existingSheet);
 
       SpreadsheetApp.flush();
     }
 
-    const sheet =
-      ss.insertSheet(
-        sheetName
-      );
+    const sheet = ss.insertSheet(sheetName);
 
-    result.tests.sheetCreated =
-      Boolean(sheet);
+    result.tests.sheetCreated = Boolean(sheet);
 
     const invalidPlacement = {
-      id:
-        'unknown-component',
+      id: 'unknown-component',
 
-      type:
-        'unknown-widget',
+      type: 'unknown-widget',
 
       component: {
-        id:
-          'unknown-component',
+        id: 'unknown-component',
 
-        type:
-          'unknown-widget'
+        type: 'unknown-widget'
       },
 
-      region:
-        'main',
+      region: 'main',
 
-      order:
-        10,
+      order: 10,
 
-      fullWidth:
-        false,
+      fullWidth: false,
 
-      startRow:
-        1,
+      startRow: 1,
 
-      endRow:
-        4,
+      endRow: 4,
 
-      startColumn:
-        1,
+      startColumn: 1,
 
-      endColumn:
-        4,
+      endColumn: 4,
 
-      rowSpan:
-        4,
+      rowSpan: 4,
 
-      columnSpan:
-        4,
+      columnSpan: 4,
 
-      rangeA1:
-        'A1:D4'
+      rangeA1: 'A1:D4'
     };
 
-    const errorReport =
-      aerpRenderLayoutPlacement(
-        sheet,
-        invalidPlacement,
-        {
-          stopOnError:
-            false
-        }
-      );
+    const errorReport = aerpRenderLayoutPlacement(sheet, invalidPlacement, {
+      stopOnError: false
+    });
 
-    result.errorReport =
-      errorReport;
+    result.errorReport = errorReport;
 
     result.tests.unknownRendererRejected =
-      errorReport.error &&
-      errorReport.error.indexOf(
-        'Renderer not registered'
-      ) !== -1;
+      errorReport.error && errorReport.error.indexOf('Renderer not registered') !== -1;
 
     result.tests.failureReportReturned =
-      errorReport.ok === false &&
-      errorReport.status ===
-        'FAILED';
+      errorReport.ok === false && errorReport.status === 'FAILED';
 
     result.tests.stopOnErrorFalseRespected =
-      Boolean(errorReport) &&
-      errorReport.completedAt !==
-        null;
-
+      Boolean(errorReport) && errorReport.completedAt !== null;
   } catch (error) {
-    result.errors.push(
-      error &&
-      error.message
-        ? error.message
-        : String(error)
-    );
+    result.errors.push(error && error.message ? error.message : String(error));
   }
 
-  const testValues =
-    Object.keys(
-      result.tests
-    ).map(function(testName) {
-      return result.tests[
-        testName
-      ];
-    });
+  const testValues = Object.keys(result.tests).map(function (testName) {
+    return result.tests[testName];
+  });
 
   result.ok =
     result.errors.length === 0 &&
-    testValues.every(function(value) {
+    testValues.every(function (value) {
       return value === true;
     });
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   if (!result.ok) {
-    throw new Error(
-      'Renderer Error Handling no superó todas las pruebas.'
-    );
+    throw new Error('Renderer Error Handling no superó todas las pruebas.');
   }
 
   return result;
 }
-
 
 /**
  * Runs the complete AERP-035 Sheet Renderer test suite.
@@ -2308,17 +1464,13 @@ function testLayoutSheetRendererErrors() {
  * @return {Object} Complete test-suite result.
  */
 function testLayoutSheetRenderer() {
-  const dependencies =
-    testLayoutSheetRendererDependencies();
+  const dependencies = testLayoutSheetRendererDependencies();
 
-  const placement =
-    testLayoutSheetRendererPlacement();
+  const placement = testLayoutSheetRendererPlacement();
 
-  const completeLayout =
-    testLayoutSheetRendererLayout();
+  const completeLayout = testLayoutSheetRendererLayout();
 
-  const errorHandling =
-    testLayoutSheetRendererErrors();
+  const errorHandling = testLayoutSheetRendererErrors();
 
   const result = {
     ok:
@@ -2327,44 +1479,29 @@ function testLayoutSheetRenderer() {
       completeLayout.ok === true &&
       errorHandling.ok === true,
 
-    module:
-      'AERP-035',
+    module: 'AERP-035',
 
-    version:
-      AERP_LAYOUT_SHEET_RENDERER_VERSION,
+    version: AERP_LAYOUT_SHEET_RENDERER_VERSION,
 
-    phase:
-      'Complete Sheet Renderer Suite',
+    phase: 'Complete Sheet Renderer Suite',
 
     tests: {
-      dependencies:
-        dependencies.ok,
+      dependencies: dependencies.ok,
 
-      placement:
-        placement.ok,
+      placement: placement.ok,
 
-      completeLayout:
-        completeLayout.ok,
+      completeLayout: completeLayout.ok,
 
-      errorHandling:
-        errorHandling.ok
+      errorHandling: errorHandling.ok
     },
 
     errors: []
   };
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   if (!result.ok) {
-    throw new Error(
-      'Sheet Renderer no superó la suite completa.'
-    );
+    throw new Error('Sheet Renderer no superó la suite completa.');
   }
 
   return result;
