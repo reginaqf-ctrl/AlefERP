@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "canonicalNodeVersion": "24.18.0",
   "manifestFile": "appsscript.json",
   "artifact": {
@@ -64,6 +64,11 @@
     "aerpAuthorize",
     "aerpAuthorizeEnterprise"
   ],
+  "embeddedTestEntrypoints": {
+    "prefixes": ["test", "runTest"],
+    "requireNoRetainedReferences": true,
+    "preserveLineNumbers": true
+  },
   "clasp": {
     "workingDirectory": ".qa-output",
     "rootDir": "apps-script-bundle",
@@ -76,7 +81,8 @@
   "policy": {
     "rootFilesOnly": true,
     "allowSymlinks": false,
-    "exactSourceBytes": true,
+    "preserveRetainedSourceBytes": true,
+    "removeEmbeddedTestEntrypoints": true,
     "requireV8": true,
     "requirePositiveClaspIgnore": true
   }

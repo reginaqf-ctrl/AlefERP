@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
@@ -6,6 +7,7 @@ import process from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { Linter } from 'eslint';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = path.resolve(SCRIPT_DIR, '../..');
@@ -14,6 +16,7 @@ const ROOT_KEYS = Object.freeze([
   'artifact',
   'canonicalNodeVersion',
   'clasp',
+  'embeddedTestEntrypoints',
   'excludedJavaScriptFiles',
   'manifestFile',
   'policy',
@@ -36,9 +39,15 @@ const CLASP_KEYS = Object.freeze([
   'skipSubdirectories',
   'workingDirectory'
 ]);
+const EMBEDDED_TEST_ENTRYPOINT_KEYS = Object.freeze([
+  'prefixes',
+  'preserveLineNumbers',
+  'requireNoRetainedReferences'
+]);
 const POLICY_KEYS = Object.freeze([
   'allowSymlinks',
-  'exactSourceBytes',
+  'preserveRetainedSourceBytes',
+  'removeEmbeddedTestEntrypoints',
   'requirePositiveClaspIgnore',
   'requireV8',
   'rootFilesOnly'
@@ -183,7 +192,7 @@ export async function loadBundleManifest(root = DEFAULT_ROOT) {
   const absolute = await requireContainedFile(root, MANIFEST_PATH, 'MANIFEST_READ_FAILED');
   const { value, text } = await readJson(absolute, 'MANIFEST_READ_FAILED');
   assertExactKeys(value, ROOT_KEYS, 'MANIFEST_SCHEMA_INVALID');
-  if (value.schemaVersion !== '1.0.0') fail('MANIFEST_VERSION_INVALID');
+  if (value.schemaVersion !== '1.1.0') fail('MANIFEST_VERSION_INVALID');
   if (value.canonicalNodeVersion !== process.versions.node) fail('NODE_VERSION_MISMATCH');
   assertRootFileName(value.manifestFile, 'MANIFEST_FILE_INVALID');
   if (value.manifestFile !== 'appsscript.json') fail('MANIFEST_FILE_INVALID');
@@ -202,6 +211,20 @@ export async function loadBundleManifest(root = DEFAULT_ROOT) {
   assertUniqueStringList(value.requiredEntrypoints, 'ENTRYPOINT_LIST_INVALID');
   if (!value.requiredEntrypoints.every(item => /^[A-Za-z_$][\w$]*$/u.test(item))) {
     fail('ENTRYPOINT_LIST_INVALID');
+  }
+  assertExactKeys(
+    value.embeddedTestEntrypoints,
+    EMBEDDED_TEST_ENTRYPOINT_KEYS,
+    'EMBEDDED_TEST_POLICY_SCHEMA_INVALID'
+  );
+  assertUniqueStringList(value.embeddedTestEntrypoints.prefixes, 'EMBEDDED_TEST_PREFIXES_INVALID');
+  if (
+    JSON.stringify(value.embeddedTestEntrypoints.prefixes) !==
+      JSON.stringify(['test', 'runTest']) ||
+    value.embeddedTestEntrypoints.requireNoRetainedReferences !== true ||
+    value.embeddedTestEntrypoints.preserveLineNumbers !== true
+  ) {
+    fail('EMBEDDED_TEST_POLICY_INVALID');
   }
   const sourceSet = new Set(value.sourceFiles);
   if (value.excludedJavaScriptFiles.some(file => sourceSet.has(file))) fail('INVENTORY_OVERLAP');
@@ -227,7 +250,8 @@ export async function loadBundleManifest(root = DEFAULT_ROOT) {
   if (
     value.policy.rootFilesOnly !== true ||
     value.policy.allowSymlinks !== false ||
-    value.policy.exactSourceBytes !== true ||
+    value.policy.preserveRetainedSourceBytes !== true ||
+    value.policy.removeEmbeddedTestEntrypoints !== true ||
     value.policy.requireV8 !== true ||
     value.policy.requirePositiveClaspIgnore !== true
   ) {
@@ -295,12 +319,274 @@ export async function validateRepositoryInventory(root, manifest) {
   return { discoveredJavaScript, expectedIgnoreLines };
 }
 
+function parseScript(source, file) {
+  const captured = { ast: null, sourceCode: null };
+  const captureRule = {
+    create(context) {
+      return {
+        Program(node) {
+          captured.ast = node;
+          captured.sourceCode = context.sourceCode;
+        }
+      };
+    }
+  };
+  const linter = new Linter();
+  const messages = linter.verify(
+    source,
+    [
+      {
+        languageOptions: { ecmaVersion: 'latest', sourceType: 'script' },
+        plugins: { local: { rules: { capture: captureRule } } },
+        rules: { 'local/capture': 'error' }
+      }
+    ],
+    { filename: file }
+  );
+  if (
+    !captured.ast ||
+    !captured.sourceCode?.scopeManager ||
+    messages.some(message => message.fatal)
+  ) {
+    fail('SOURCE_PARSE_FAILED');
+  }
+  return captured;
+}
+
+function isEmbeddedTestEntrypoint(name, prefixes) {
+  return prefixes.some(prefix => {
+    if (name === prefix) return true;
+    if (!name.startsWith(prefix)) return false;
+    return /^[A-Z0-9_$]/u.test(name.slice(prefix.length, prefix.length + 1));
+  });
+}
+
+function containsRange(outer, innerStart) {
+  return innerStart >= outer[0] && innerStart < outer[1];
+}
+
+function preserveLineBreaksOnly(source) {
+  const lineBreaks = source.match(/\r\n|\r|\n/gu) || [];
+  return ` ${lineBreaks.join('')}`;
+}
+
+export function transformSourceForArtifact(source, file, policy) {
+  if (typeof source !== 'string' || typeof file !== 'string' || !isPlainObject(policy)) {
+    fail('EMBEDDED_TEST_TRANSFORM_INPUT_INVALID');
+  }
+  const byteOrderMark = source.startsWith('\uFEFF') ? '\uFEFF' : '';
+  const parseableSource = byteOrderMark ? source.slice(1) : source;
+  const captured = parseScript(parseableSource, file);
+  const declarationNodes = captured.ast.body.filter(
+    statement =>
+      statement.type === 'FunctionDeclaration' &&
+      statement.id &&
+      isEmbeddedTestEntrypoint(statement.id.name, policy.prefixes)
+  );
+  const globalScope =
+    captured.sourceCode.scopeManager.globalScope || captured.sourceCode.scopeManager.scopes[0];
+  const referenceByIdentifier = new WeakMap();
+  for (const scope of captured.sourceCode.scopeManager.scopes) {
+    for (const reference of [...scope.references, ...(scope.through || [])]) {
+      referenceByIdentifier.set(reference.identifier, reference);
+    }
+  }
+  const removableVariables = new Set();
+  for (const node of declarationNodes) {
+    const variable = globalScope?.variables.find(
+      candidate =>
+        candidate.name === node.id.name &&
+        candidate.defs.some(
+          definition =>
+            [definition.node, definition.name, definition.parent].includes(node) ||
+            [definition.node, definition.name, definition.parent].includes(node.id)
+        )
+    );
+    if (!variable) fail('EMBEDDED_TEST_BINDING_UNRESOLVED');
+    removableVariables.add(variable);
+  }
+  const selfExportNodes = captured.ast.body.filter(statement => {
+    const assignment = statement.type === 'ExpressionStatement' ? statement.expression : null;
+    const left = assignment?.type === 'AssignmentExpression' ? assignment.left : null;
+    const right = assignment?.type === 'AssignmentExpression' ? assignment.right : null;
+    if (
+      assignment?.operator !== '=' ||
+      left?.type !== 'MemberExpression' ||
+      left.object?.type !== 'Identifier' ||
+      left.object.name !== 'globalThis' ||
+      right?.type !== 'Identifier'
+    ) {
+      return false;
+    }
+    const globalThisReference = referenceByIdentifier.get(left.object);
+    if (globalThisReference?.resolved?.defs?.length > 0) return false;
+    const property = left.computed
+      ? left.property?.type === 'Literal' && typeof left.property.value === 'string'
+        ? left.property.value
+        : null
+      : left.property?.type === 'Identifier'
+        ? left.property.name
+        : null;
+    if (
+      !property ||
+      property !== right.name ||
+      !isEmbeddedTestEntrypoint(property, policy.prefixes)
+    ) {
+      return false;
+    }
+    const rightReference = referenceByIdentifier.get(right);
+    return Boolean(rightReference?.resolved && removableVariables.has(rightReference.resolved));
+  });
+  const removalNodes = [...declarationNodes, ...selfExportNodes];
+  const removalRanges = removalNodes
+    .map(node => node.range)
+    .sort((left, right) => left[0] - right[0]);
+  if (
+    removalRanges.some(
+      (range, index) =>
+        !Array.isArray(range) ||
+        range.length !== 2 ||
+        range[0] < 0 ||
+        range[1] <= range[0] ||
+        (index > 0 && range[0] < removalRanges[index - 1][1])
+    )
+  ) {
+    fail('EMBEDDED_TEST_RANGE_INVALID');
+  }
+
+  if (declarationNodes.length > 0 && policy.requireNoRetainedReferences === true) {
+    const references = new Set();
+    for (const scope of captured.sourceCode.scopeManager.scopes) {
+      for (const reference of [...scope.references, ...(scope.through || [])]) {
+        if (reference.resolved && removableVariables.has(reference.resolved)) {
+          references.add(reference.identifier);
+        }
+      }
+    }
+    for (const identifier of references) {
+      if (!removalRanges.some(range => containsRange(range, identifier.range[0]))) {
+        fail('EMBEDDED_TEST_REFERENCE_RETAINED');
+      }
+    }
+  }
+
+  let transformed = '';
+  let cursor = 0;
+  for (const range of removalRanges) {
+    transformed += parseableSource.slice(cursor, range[0]);
+    transformed += preserveLineBreaksOnly(parseableSource.slice(range[0], range[1]));
+    cursor = range[1];
+  }
+  transformed += parseableSource.slice(cursor);
+
+  const transformedCapture = parseScript(transformed, file);
+  const transformedProgram = transformedCapture.ast;
+  if (
+    transformedProgram.body.some(
+      statement =>
+        statement.type === 'FunctionDeclaration' &&
+        statement.id &&
+        isEmbeddedTestEntrypoint(statement.id.name, policy.prefixes)
+    )
+  ) {
+    fail('EMBEDDED_TEST_ENTRYPOINT_RETAINED');
+  }
+  for (const scope of transformedCapture.sourceCode.scopeManager.scopes) {
+    for (const reference of [...scope.references, ...(scope.through || [])]) {
+      if (
+        (!reference.resolved || reference.resolved.defs.length === 0) &&
+        isEmbeddedTestEntrypoint(reference.identifier.name, policy.prefixes)
+      ) {
+        fail('EMBEDDED_TEST_REFERENCE_RETAINED');
+      }
+    }
+  }
+  const pendingNodes = [transformedProgram];
+  while (pendingNodes.length > 0) {
+    const node = pendingNodes.pop();
+    if (node.type === 'MemberExpression' && node.object?.type === 'Identifier') {
+      const property = node.computed
+        ? node.property?.type === 'Literal' && typeof node.property.value === 'string'
+          ? node.property.value
+          : null
+        : node.property?.type === 'Identifier'
+          ? node.property.name
+          : null;
+      if (
+        node.object.name === 'globalThis' &&
+        property &&
+        isEmbeddedTestEntrypoint(property, policy.prefixes)
+      ) {
+        fail('EMBEDDED_TEST_GLOBAL_MEMBER_RETAINED');
+      }
+    }
+    for (const visitorKey of transformedCapture.sourceCode.visitorKeys[node.type] || []) {
+      const child = node[visitorKey];
+      if (Array.isArray(child)) pendingNodes.push(...child.filter(Boolean));
+      else if (child) pendingNodes.push(child);
+    }
+  }
+  if (
+    policy.preserveLineNumbers === true &&
+    (parseableSource.match(/\r\n|\r|\n/gu) || []).length !==
+      (transformed.match(/\r\n|\r|\n/gu) || []).length
+  ) {
+    fail('EMBEDDED_TEST_LINE_MAP_CHANGED');
+  }
+
+  return {
+    source: byteOrderMark + transformed,
+    removedEntrypoints: declarationNodes.map(node => ({
+      name: node.id.name,
+      line: node.loc.start.line
+    })),
+    removedSelfExports: selfExportNodes.map(node => {
+      const left = node.expression.left;
+      return {
+        name: left.computed ? left.property.value : left.property.name,
+        line: node.loc.start.line
+      };
+    })
+  };
+}
+
 async function readSourceRecords(root, manifest) {
   const records = [];
   for (const file of [manifest.manifestFile, ...manifest.sourceFiles]) {
     const absolute = await requireRegularFile(root, file, 'SOURCE_FILE_INVALID');
-    const bytes = await readFile(absolute);
-    records.push({ path: file, bytes, bytesLength: bytes.length, sha256: sha256(bytes) });
+    const sourceBytes = await readFile(absolute);
+    if (file === manifest.manifestFile) {
+      records.push({
+        path: file,
+        bytes: sourceBytes,
+        bytesLength: sourceBytes.length,
+        sha256: sha256(sourceBytes),
+        sourceBytesLength: sourceBytes.length,
+        sourceSha256: sha256(sourceBytes),
+        removedEntrypoints: [],
+        removedSelfExports: []
+      });
+      continue;
+    }
+    const transformed = transformSourceForArtifact(
+      sourceBytes.toString('utf8'),
+      file,
+      manifest.embeddedTestEntrypoints
+    );
+    if (!Buffer.from(sourceBytes.toString('utf8'), 'utf8').equals(sourceBytes)) {
+      fail('SOURCE_ENCODING_INVALID');
+    }
+    const bytes = Buffer.from(transformed.source, 'utf8');
+    records.push({
+      path: file,
+      bytes,
+      bytesLength: bytes.length,
+      sha256: sha256(bytes),
+      sourceBytesLength: sourceBytes.length,
+      sourceSha256: sha256(sourceBytes),
+      removedEntrypoints: transformed.removedEntrypoints,
+      removedSelfExports: transformed.removedSelfExports
+    });
   }
   return records;
 }
@@ -323,6 +609,153 @@ async function requireSafeOutputRoot(root) {
   return outputRoot;
 }
 
+function frameworkSchemaSmokeFixture() {
+  return {
+    version: '2.0.0',
+    generatedAt: '2026-08-17T00:00:00.000Z',
+    tables: [
+      {
+        id: 'TABLE_ITEMS',
+        code: 'ITEMS',
+        name: 'Items',
+        entity: 'Item',
+        module: 'CORE',
+        category: '',
+        type: '',
+        physicalName: 'CORE_ITEMS',
+        prefix: '',
+        active: true,
+        columns: [
+          {
+            ID_Columna: 'COL_PK',
+            Tabla: 'CORE_ITEMS',
+            Nombre_Campo: 'ID_Item',
+            Nombre_Mostrar: 'ID Item',
+            Tipo_Dato: 'Text',
+            Tipo_Control: 'Text',
+            Es_Key: true,
+            Es_Label: false,
+            Es_Requerido: true,
+            Permite_Nulos: false,
+            Valor_Inicial: '',
+            Formula_App: '',
+            Tabla_Referencia: '',
+            Longitud: '',
+            Orden: 1,
+            Activo: true,
+            Estado: '',
+            Fecha_Creacion: '',
+            Fecha_Actualizacion: '',
+            Visible: true,
+            Editable: false,
+            Es_Ref: false,
+            Es_Virtual: false,
+            Es_Buscable: false,
+            Es_Filtrable: false,
+            Es_Ordenable: false,
+            Es_Indexado: false,
+            Grupo_Formulario: '',
+            Ayuda: '',
+            Placeholder: ''
+          }
+        ]
+      }
+    ],
+    summary: {
+      tables: 1,
+      columns: 1,
+      relations: 0,
+      views: 0,
+      warnings: [],
+      errors: [],
+      durationMs: 0
+    }
+  };
+}
+
+function runExactArtifactSmoke(context) {
+  context.aerpExactArtifactFrameworkSchema = vm.runInContext(
+    `(${JSON.stringify(frameworkSchemaSmokeFixture())})`,
+    context,
+    { timeout: 10000 }
+  );
+  const singleBuild = vm.runInContext(
+    'aerpBuildSingleMetadataArtifactsFromFrameworkSchema(aerpExactArtifactFrameworkSchema)',
+    context,
+    { timeout: 10000 }
+  );
+  if (!singleBuild || singleBuild.ok !== true) {
+    fail('EXACT_ARTIFACT_SINGLE_BUILD_RESULT_FAILED');
+  }
+  if (
+    singleBuild.summary?.tables !== 1 ||
+    singleBuild.summary?.columns !== 1 ||
+    singleBuild.summary?.primaryKeys !== 1 ||
+    singleBuild.summary?.foreignKeys !== 0 ||
+    singleBuild.summary?.forms !== 1 ||
+    singleBuild.summary?.views !== 1 ||
+    singleBuild.summary?.menus !== 1
+  ) {
+    fail('EXACT_ARTIFACT_SINGLE_BUILD_SUMMARY_FAILED');
+  }
+  if (!Object.isFrozen(singleBuild)) fail('EXACT_ARTIFACT_SINGLE_BUILD_FREEZE_FAILED');
+
+  const authorization = vm.runInContext('aerpAuthorize(null)', context, { timeout: 10000 });
+  const enterpriseAuthorization = vm.runInContext('aerpAuthorizeEnterprise(null, null)', context, {
+    timeout: 10000
+  });
+  if (
+    !authorization ||
+    authorization.allowed !== false ||
+    authorization.decision !== 'DENY' ||
+    !enterpriseAuthorization ||
+    enterpriseAuthorization.allowed !== false ||
+    enterpriseAuthorization.decisionType !== 'DENY'
+  ) {
+    fail('EXACT_ARTIFACT_AUTHORIZATION_SMOKE_FAILED');
+  }
+
+  context.LockService = Object.freeze({
+    getDocumentLock() {
+      return Object.freeze({
+        tryLock() {
+          return false;
+        },
+        releaseLock() {
+          throw new Error('UNEXPECTED_RELEASE');
+        }
+      });
+    }
+  });
+  const pipeline = vm.runInContext('aerpRunBuildPipeline()', context, { timeout: 10000 });
+  const deployment = vm.runInContext('runGenerarERP()', context, { timeout: 10000 });
+  const workflow = vm.runInContext('aerpRunBuildWorkflow()', context, { timeout: 10000 });
+  if (
+    !pipeline ||
+    pipeline.ok !== false ||
+    pipeline.status !== 'BUILD_BUSY' ||
+    !deployment ||
+    deployment.ok !== false ||
+    deployment.status !== 'FAILED' ||
+    !workflow ||
+    workflow.ok !== false ||
+    workflow.status !== 'FAILED'
+  ) {
+    fail('EXACT_ARTIFACT_OPERATIONAL_SMOKE_FAILED');
+  }
+
+  delete context.aerpExactArtifactFrameworkSchema;
+  delete context.LockService;
+  return Object.freeze([
+    'single-build-contract',
+    'authorization-fail-closed',
+    'enterprise-authorization-fail-closed',
+    'pipeline-lock-contention',
+    'deployment-failure-sanitization',
+    'workflow-failure-sanitization'
+  ]);
+}
+
 function validateCombinedRuntime(records, manifest) {
   const sourceRecords = records.filter(record => record.path.endsWith('.js'));
   const combinedSource = sourceRecords
@@ -342,6 +775,23 @@ function validateCombinedRuntime(records, manifest) {
   for (const entrypoint of manifest.requiredEntrypoints) {
     if (typeof context[entrypoint] !== 'function') fail('BUNDLE_ENTRYPOINT_MISSING');
   }
+  const retainedTestEntrypoints = Object.getOwnPropertyNames(context).filter(
+    name =>
+      typeof context[name] === 'function' &&
+      isEmbeddedTestEntrypoint(name, manifest.embeddedTestEntrypoints.prefixes)
+  );
+  if (retainedTestEntrypoints.length > 0) fail('EMBEDDED_TEST_ENTRYPOINT_RETAINED');
+  return runExactArtifactSmoke(context);
+}
+
+async function readExactArtifactRecords(root, manifest, records) {
+  const artifactPath = path.join(root, manifest.artifact.directory);
+  const exactRecords = [];
+  for (const record of records) {
+    const bytes = await readFile(path.join(artifactPath, record.path));
+    exactRecords.push({ ...record, bytes, bytesLength: bytes.length, sha256: sha256(bytes) });
+  }
+  return exactRecords;
 }
 
 function calculateArtifactHash(records) {
@@ -558,6 +1008,8 @@ export async function buildAppsScriptBundle({
   validateCombinedRuntime(records, manifest);
   await replaceArtifactDirectory(root, manifest, records, runId);
   await verifyArtifact(root, manifest, records);
+  const exactArtifactRecords = await readExactArtifactRecords(root, manifest, records);
+  const runtimeSmokeChecks = validateCombinedRuntime(exactArtifactRecords, manifest);
 
   const claspPreparation = prepareClasp
     ? await prepareClaspConfig(root, manifest, runId)
@@ -566,9 +1018,18 @@ export async function buildAppsScriptBundle({
         ignorePath: manifest.artifact.claspIgnorePath,
         filePushOrder: claspFilePushOrder(manifest)
       };
-  const artifactHash = calculateArtifactHash(records);
+  const artifactHash = calculateArtifactHash(exactArtifactRecords);
+  const transformedFiles = exactArtifactRecords.filter(
+    record => record.removedEntrypoints.length > 0
+  );
+  const removedEntrypoints = transformedFiles.flatMap(record =>
+    record.removedEntrypoints.map(entrypoint => ({ path: record.path, ...entrypoint }))
+  );
+  const removedSelfExports = transformedFiles.flatMap(record =>
+    record.removedSelfExports.map(entrypoint => ({ path: record.path, ...entrypoint }))
+  );
   const evidence = {
-    schemaVersion: '1.0.0',
+    schemaVersion: '1.1.0',
     runId,
     generatedAt,
     revision: currentRevision(root),
@@ -577,15 +1038,31 @@ export async function buildAppsScriptBundle({
     inventory: {
       discoveredJavaScript: inventory.discoveredJavaScript.length,
       includedJavaScript: manifest.sourceFiles.length,
-      excludedJavaScript: manifest.excludedJavaScriptFiles.length
+      excludedJavaScript: manifest.excludedJavaScriptFiles.length,
+      embeddedTestEntrypointsRemoved: removedEntrypoints.length,
+      embeddedTestSelfExportsRemoved: removedSelfExports.length
     },
     artifact: {
       directory: manifest.artifact.directory,
       sha256: artifactHash,
-      files: records.map(record => ({
+      files: exactArtifactRecords.map(record => ({
         path: record.path,
         bytes: record.bytesLength,
         sha256: record.sha256
+      }))
+    },
+    transformation: {
+      strategy: 'parser-backed-top-level-test-function-removal',
+      preserveRetainedSourceBytes: true,
+      preserveLineNumbers: true,
+      files: transformedFiles.map(record => ({
+        path: record.path,
+        sourceBytes: record.sourceBytesLength,
+        sourceSha256: record.sourceSha256,
+        artifactBytes: record.bytesLength,
+        artifactSha256: record.sha256,
+        removedEntrypoints: record.removedEntrypoints,
+        removedSelfExports: record.removedSelfExports
       }))
     },
     clasp: {
@@ -600,7 +1077,9 @@ export async function buildAppsScriptBundle({
     runtime: {
       compiled: true,
       loaded: true,
-      requiredEntrypoints: manifest.requiredEntrypoints
+      requiredEntrypoints: manifest.requiredEntrypoints,
+      retainedTestEntrypoints: 0,
+      smokeChecks: runtimeSmokeChecks
     },
     result: { ok: true, code: 'BUNDLE_VALID' }
   };

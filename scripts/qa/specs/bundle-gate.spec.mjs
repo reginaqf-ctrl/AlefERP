@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import {
   appendFile,
   copyFile,
@@ -20,6 +21,7 @@ import {
   loadBundleManifest,
   prepareClaspConfig,
   retryTransientFilesystemOperation,
+  transformSourceForArtifact,
   validateRepositoryInventory,
   verifyArtifact
 } from '../build-apps-script-bundle.mjs';
@@ -92,6 +94,7 @@ test('transient Windows filesystem contention is retried without hiding permanen
 
 test('positive manifest defines 37 ordered scripts and eight explicit exclusions', async () => {
   const { manifest } = await loadBundleManifest(REPOSITORY_ROOT);
+  assert.equal(manifest.schemaVersion, '1.1.0');
   assert.equal(manifest.sourceFiles.length, 37);
   assert.equal(manifest.excludedJavaScriptFiles.length, 8);
   assert.equal(manifest.sourceFiles.includes('09_Tests.js'), false);
@@ -100,6 +103,10 @@ test('positive manifest defines 37 ordered scripts and eight explicit exclusions
     manifest.sourceFiles.some(file => file.endsWith('.test.js')),
     false
   );
+  assert.deepEqual(manifest.embeddedTestEntrypoints.prefixes, ['test', 'runTest']);
+  assert.equal(manifest.embeddedTestEntrypoints.requireNoRetainedReferences, true);
+  assert.equal(manifest.policy.removeEmbeddedTestEntrypoints, true);
+  assert.equal(manifest.policy.preserveRetainedSourceBytes, true);
 });
 
 test('repository inventory and positive clasp ignore agree exactly', async () => {
@@ -120,6 +127,30 @@ test('build creates the exact isolated artifact and excludes all non-production 
   assert.equal(evidence.artifact.files.length, 38);
   assert.equal(evidence.runtime.compiled, true);
   assert.equal(evidence.runtime.loaded, true);
+  assert.equal(evidence.runtime.retainedTestEntrypoints, 0);
+  assert.deepEqual(evidence.runtime.smokeChecks, [
+    'single-build-contract',
+    'authorization-fail-closed',
+    'enterprise-authorization-fail-closed',
+    'pipeline-lock-contention',
+    'deployment-failure-sanitization',
+    'workflow-failure-sanitization'
+  ]);
+  assert.ok(evidence.inventory.embeddedTestEntrypointsRemoved > 0);
+  assert.equal(
+    evidence.transformation.files.reduce(
+      (total, file) => total + file.removedEntrypoints.length,
+      0
+    ),
+    evidence.inventory.embeddedTestEntrypointsRemoved
+  );
+  assert.equal(
+    evidence.transformation.files.reduce(
+      (total, file) => total + file.removedSelfExports.length,
+      0
+    ),
+    evidence.inventory.embeddedTestSelfExportsRemoved
+  );
 
   const artifactFiles = (
     await readdir(path.join(root, manifest.artifact.directory), { withFileTypes: true })
@@ -132,16 +163,94 @@ test('build creates the exact isolated artifact and excludes all non-production 
   }
 });
 
-test('artifact bytes and recorded hashes match every approved source', async () => {
+test('artifact bytes exactly match the approved parser-backed source transformation', async () => {
   const { root, manifest } = await createFixture();
   const evidence = await buildAppsScriptBundle({ root, persistEvidence: false });
   for (const record of evidence.artifact.files) {
     const source = await readFile(path.join(root, record.path));
     const artifact = await readFile(path.join(root, manifest.artifact.directory, record.path));
-    assert.deepEqual(artifact, source);
+    const expected = record.path.endsWith('.js')
+      ? Buffer.from(
+          transformSourceForArtifact(
+            source.toString('utf8'),
+            record.path,
+            manifest.embeddedTestEntrypoints
+          ).source,
+          'utf8'
+        )
+      : source;
+    assert.deepEqual(artifact, expected);
     assert.equal(artifact.length, record.bytes);
     assert.match(record.sha256, /^[a-f0-9]{64}$/u);
   }
+});
+
+test('embedded test entrypoints are removed without changing retained code or line numbers', async () => {
+  const { manifest } = await loadBundleManifest(REPOSITORY_ROOT);
+  const source = [
+    'const retainedValue = 1;',
+    'function testRemoved() { return retainedValue; }',
+    'function runTestRemoved() { return testRemoved(); }',
+    'globalThis.testRemoved = testRemoved;',
+    'function testerRemains() { return retainedValue; }',
+    'function retainedLocalName() { const testCase = 1; return testCase; }',
+    ''
+  ].join('\n');
+  const transformed = transformSourceForArtifact(
+    source,
+    'controlled.js',
+    manifest.embeddedTestEntrypoints
+  );
+  assert.deepEqual(
+    transformed.removedEntrypoints.map(entrypoint => entrypoint.name),
+    ['testRemoved', 'runTestRemoved']
+  );
+  assert.deepEqual(
+    transformed.removedSelfExports.map(entrypoint => entrypoint.name),
+    ['testRemoved']
+  );
+  assert.equal(transformed.source.includes('function testRemoved'), false);
+  assert.equal(transformed.source.includes('function runTestRemoved'), false);
+  assert.equal(transformed.source.includes('globalThis.testRemoved'), false);
+  assert.equal(transformed.source.includes('function testerRemains'), true);
+  assert.equal(transformed.source.includes('const testCase = 1;'), true);
+  assert.equal(transformed.source.includes('const retainedValue = 1;'), true);
+  assert.equal(transformed.source.split('\n').length, source.split('\n').length);
+});
+
+test('a retained production reference to a removed test entrypoint fails closed', async () => {
+  const { root, manifest } = await createFixture();
+  await appendFile(
+    path.join(root, '11_Installer.js'),
+    '\nfunction retainedCommercialCaller() { return testInstaller(); }\n'
+  );
+  await assert.rejects(
+    buildAppsScriptBundle({ root, persistEvidence: false }),
+    /EMBEDDED_TEST_REFERENCE_RETAINED/u
+  );
+  assert.equal(manifest.embeddedTestEntrypoints.requireNoRetainedReferences, true);
+});
+
+test('cross-file test references and retained global test members fail closed', async () => {
+  const { manifest } = await loadBundleManifest(REPOSITORY_ROOT);
+  assert.throws(
+    () =>
+      transformSourceForArtifact(
+        'function retainedCaller() { return testExternalHelper(); }\n',
+        'cross-file.js',
+        manifest.embeddedTestEntrypoints
+      ),
+    /EMBEDDED_TEST_REFERENCE_RETAINED/u
+  );
+  assert.throws(
+    () =>
+      transformSourceForArtifact(
+        'function retainedCaller() { return globalThis.testExternalHelper(); }\n',
+        'global-member.js',
+        manifest.embeddedTestEntrypoints
+      ),
+    /EMBEDDED_TEST_GLOBAL_MEMBER_RETAINED/u
+  );
 });
 
 test('unexpected, missing and symbolic-link JavaScript fail closed', async t => {
