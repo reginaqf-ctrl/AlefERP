@@ -70,7 +70,7 @@ const projectGlobalNames = new Set(
 
 module.exports = [
   {
-    ignores: ['node_modules/**', '.husky/_/**']
+    ignores: ['node_modules/**', '.husky/_/**', '.qa-output/**']
   },
   js.configs.recommended,
   {
