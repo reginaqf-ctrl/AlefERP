@@ -2,9 +2,9 @@
 
 ## 1. Purpose and authorization
 
-This runbook defines future release and recovery controls after all AERP-QA-001 blockers close. It does not authorize clasp, deployment, or any Git mutation.
+This runbook defines release and recovery controls for Alef ERP. It does not by itself authorize clasp, deployment, client access, or any Git mutation.
 
-Current disposition: **NO-GO**. AERP-039 may not proceed.
+Current disposition: **GO for preparation of the isolated AERP-REL-001 commercial pilot candidate**. Production deployment and client activation remain **NO-GO** until separately authorized. AERP-QA-001 remains open for the broader release controls that are not required to prepare the isolated candidate.
 
 ## 2. Roles
 
