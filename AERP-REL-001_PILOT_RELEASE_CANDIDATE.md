@@ -15,17 +15,20 @@ CLIENT ACTIVATION: NOT AUTHORIZED
 ## 2. Candidate identity
 
 - Candidate branch: `release/AlefERP-3.0.0-rc1`
-- Approved Git base: `7d1efac697e0c85cc25094d00cf10d921fe0b692`
-- Operational code revision: `5b42e13486874ba5e5edcccc9957380bb93aea96`
+- Approved Git base: `4f392de5bf7dc02d3f242b26da73f10264d68a13`
+- Candidate code revision: `4f392de5bf7dc02d3f242b26da73f10264d68a13`
+- Previously operationally tested revision: `5b42e13486874ba5e5edcccc9957380bb93aea96`
 - Product version: `3.0.0`
 - Runtime: Google Apps Script V8 bound to Google Sheets
 - Execution topology: saved HEAD code through `onOpen` and the `Alef ERP` menu
 - Versioned web/API deployment: not applicable to this pilot candidate
 - Installable triggers: none identified in the commercial bundle
 
-The only Git delta from the operationally tested revision to the approved base is
-`EVIDENCE-AERP-039-MVP-Runtime-Consolidation-2026-09-10.md`. No product source file
-changed after the successful non-production execution.
+The candidate adds a fail-closed container-isolation correction after the previously
+successful non-production execution. Spreadsheet access now resolves exclusively
+through `SpreadsheetApp.getActiveSpreadsheet()` and contains no fixed spreadsheet ID
+or `openById` fallback. This correction has passed local automated gates but has not
+yet been executed operationally in Apps Script.
 
 ## 3. Commercial scope
 
@@ -49,16 +52,17 @@ and production deployment are not part of the first pilot activation.
 ## 4. Candidate gates executed on the approved base
 
 The following controls were executed locally on 2026-09-11 against the clean
-`7d1efac` base:
+`4f392de` candidate revision:
 
 | Control                           | Result                                                                        |
 | --------------------------------- | ----------------------------------------------------------------------------- |
-| `npm test`                        | PASS — 239/239, six suites, zero failures or skips                            |
-| `npm run qa:globals`              | PASS — 760 symbols, 780 occurrences, zero duplicates, zero dynamic violations |
+| `npm test`                        | PASS — 242/242, six suites, zero failures or skips                            |
+| `npm run qa:globals`              | PASS — 759 symbols, 779 occurrences, zero duplicates, zero dynamic violations |
 | `npm run test:bundle`             | PASS — 17/17 and manifest validation                                          |
 | Commercial inventory              | PASS — 37 scripts and `appsscript.json`, 38 files total                       |
 | Embedded test removal             | PASS — 102 entry points and one technical self-export removed                 |
-| Clasp preparation                 | NOT EXECUTED                                                                  |
+| Spreadsheet-isolation tests       | PASS — active bound container only; no-ID context fails closed                |
+| Clasp preparation                 | NOT EXECUTED for the corrected candidate                                      |
 | Apps Script or spreadsheet writes | NOT EXECUTED during candidate preparation                                     |
 
 Local JSON evidence remains ephemeral and Git-ignored under `.qa-output/`.
@@ -69,7 +73,7 @@ The candidate artifact is identified by the versioned bundle gate using ordered
 repository-relative paths and each file's SHA-256:
 
 ```text
-9d8275ac28c640e3007f2b209456342637cfc6a4e8ea1796f2d258a8ade9157e
+0ed03fb36b945cf920f0ab4f0de78bf4d0df7ae4affcdeb04015382eb5849073
 ```
 
 Two consecutive clean reconstructions produced this exact hash.
@@ -86,7 +90,7 @@ comparison and operational results remain valid observations for that session.
 
 ## 6. Operational evidence inherited by the candidate
 
-The non-production execution recorded in
+The earlier non-production execution recorded in
 `EVIDENCE-AERP-039-MVP-Runtime-Consolidation-2026-09-10.md` confirmed:
 
 - successful primary commercial generation;
@@ -96,22 +100,24 @@ The non-production execution recorded in
 - retention of the four approved backups; and
 - structural preservation of `CORE_COLUMNAS`.
 
-The candidate does not claim cryptographic cell-by-cell equality, workflow validation,
-or production validation.
+That execution predates the container-isolation correction. The candidate does not
+claim an operational result for `4f392de`, cryptographic cell-by-cell equality,
+workflow validation, or production validation.
 
 ## 7. Pilot activation preconditions
 
 Before the candidate is activated for a client pilot:
 
-1. Create a dedicated pilot copy of the spreadsheet and its bound Apps Script project.
-2. Record sanitized identifiers outside Git in the operator's protected release record.
-3. Confirm a pre-activation spreadsheet backup and a known-good Apps Script HEAD copy.
-4. Rebuild the artifact from the candidate revision and require the canonical hash.
+1. Confirm the existing dedicated pilot spreadsheet and bound Apps Script project.
+2. Preserve the private pre-run spreadsheet backup already created for this pilot.
+3. Record sanitized identifiers outside Git in the operator's protected release record.
+4. Rebuild the artifact from `4f392de` and require the canonical hash above.
 5. Prepare clasp only for the dedicated pilot project and confirm the 38-file allowlist.
-6. Obtain explicit authorization immediately before `clasp push`.
-7. Open the pilot sheet, confirm the menu, and execute the primary generation path once.
-8. Require the validated counts, one `OK` receipt, zero warnings, and preserved backups.
-9. Stop and roll back on any mismatch; do not continue to client activation.
+6. Replace the earlier pilot bundle with this corrected candidate after authorization.
+7. Open the pilot sheet and confirm the menu without running the generation path.
+8. Obtain separate authorization immediately before one `runGenerarERP` execution.
+9. Require the validated counts, one `OK` receipt, zero warnings, and preserved backups.
+10. Stop and roll back on any mismatch; do not continue to client activation.
 
 ## 8. Pilot rollback
 
@@ -131,7 +137,9 @@ adds installable triggers.
 
 ## 9. Remaining decision
 
-The next externally mutating step is creation of the isolated pilot copy and a
-separately authorized push of this exact candidate bundle. Until that authorization is
-given, the candidate remains prepared locally and no production or client system is
-changed.
+The isolated pilot copy and its private pre-run backup already exist. The earlier RC1
+bundle was pushed to the pilot, but no operational generation was executed after the
+fixed-ID risk was found. The next externally mutating step is a separately controlled
+push of the corrected `4f392de` bundle exclusively to that pilot script. Operational
+generation remains prohibited until separately authorized after the corrected remote
+bundle is verified.
