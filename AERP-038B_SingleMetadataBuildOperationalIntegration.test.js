@@ -20,6 +20,25 @@ const fileNames = [
 const sourceByFile = Object.fromEntries(
   fileNames.map(file => [file, fs.readFileSync(path.join(__dirname, file), 'utf8')])
 );
+const spreadsheetConfigSource = fs.readFileSync(path.join(__dirname, '01_Config.js'), 'utf8');
+const spreadsheetUtilsSource = fs.readFileSync(path.join(__dirname, '02_Utils.js'), 'utf8');
+
+function loadSpreadsheetResolver(activeSpreadsheet) {
+  const state = { openByIdCalls: 0 };
+  const context = vm.createContext({
+    SpreadsheetApp: {
+      getActiveSpreadsheet() {
+        return activeSpreadsheet;
+      },
+      openById() {
+        state.openByIdCalls += 1;
+        throw new Error('OPEN_BY_ID_MUST_NOT_BE_CALLED');
+      }
+    }
+  });
+  vm.runInContext(spreadsheetConfigSource + '\n' + spreadsheetUtilsSource, context);
+  return { context, state };
+}
 
 function frameworkSchema() {
   return {
@@ -621,4 +640,36 @@ test('all Generar ERP routes are statically separated from CORE_COLUMNAS synchro
   }
   assert.match(deploymentSource, /function runSincronizarMetadata\(\)/);
   assert.match(deploymentSource, /aerpGenerate\(AERP_MODES\.REBUILD\)/);
+});
+
+test('spreadsheet access resolves exclusively to the active bound container', () => {
+  const activeSpreadsheet = {
+    getId() {
+      return 'PILOT_BOUND_SPREADSHEET';
+    }
+  };
+  const { context, state } = loadSpreadsheetResolver(activeSpreadsheet);
+
+  assert.equal(vm.runInContext('aerpGetSpreadsheet().getId()', context), 'PILOT_BOUND_SPREADSHEET');
+  assert.equal(state.openByIdCalls, 0);
+});
+
+test('spreadsheet access fails closed without a valid bound container and never falls back by ID', () => {
+  for (const activeSpreadsheet of [null, {}, { getId: () => '' }, { getId: () => '   ' }]) {
+    const { context, state } = loadSpreadsheetResolver(activeSpreadsheet);
+    assert.throws(
+      () => vm.runInContext('aerpGetSpreadsheet()', context),
+      /AERP_SPREADSHEET_CONTEXT_REQUIRED/
+    );
+    assert.equal(state.openByIdCalls, 0);
+  }
+});
+
+test('commercial product source contains no fixed spreadsheet identifier or openById fallback', () => {
+  const spreadsheetSource = spreadsheetConfigSource + '\n' + spreadsheetUtilsSource;
+
+  assert.doesNotMatch(spreadsheetSource, /AERP_SPREADSHEET_ID/);
+  assert.doesNotMatch(spreadsheetSource, /\.openById\s*\(/);
+  assert.doesNotMatch(spreadsheetSource, /15UtZ1jlm04fdzWXorkKEOy3ClwUbfid_BDw9wAh_lwU/);
+  assert.match(spreadsheetUtilsSource, /SpreadsheetApp\.getActiveSpreadsheet\(\)/);
 });

@@ -1,5 +1,13 @@
 function aerpGetSpreadsheet() {
-  return SpreadsheetApp.openById(AERP_SPREADSHEET_ID);
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheetId =
+    spreadsheet && typeof spreadsheet.getId === 'function' ? spreadsheet.getId() : null;
+
+  if (typeof spreadsheetId !== 'string' || spreadsheetId.trim() === '') {
+    throw new Error('AERP_SPREADSHEET_CONTEXT_REQUIRED');
+  }
+
+  return spreadsheet;
 }
 
 function aerpGetSheet(name) {
@@ -48,7 +56,7 @@ function aerpToBoolDefault(value, defaultValue) {
 function aerpHumanize(name) {
   return String(name || '')
     .replace(/_/g, ' ')
-    .replace(/\b\w/g, function(c) {
+    .replace(/\b\w/g, function (c) {
       return c.toUpperCase();
     });
 }
@@ -65,10 +73,10 @@ function aerpNormalizeTipoDato(value) {
 function aerpNormalizeTipoControl(value) {
   const v = String(value || '').trim();
   const map = {
-    'TextArea': 'Textarea',
-    'textarea': 'Textarea',
-    'DateTime': 'DateTimePicker',
-    'Date': 'DatePicker'
+    TextArea: 'Textarea',
+    textarea: 'Textarea',
+    DateTime: 'DateTimePicker',
+    Date: 'DatePicker'
   };
   return map[v] || v || AERP_DEFAULTS.TIPO_CONTROL;
 }
