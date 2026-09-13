@@ -12,14 +12,19 @@ empresariales se omiten deliberadamente.
 - Rama: `release/AlefERP-3.0.0-rc1`
 - Revisión de release validada: `4a295e021ac7c67a6173693b6317f954464608b9`
 - Revisión de código del bundle: `4f392de5bf7dc02d3f242b26da73f10264d68a13`
+- Revisión de hardening OAuth validada:
+  `3c59bab456ad72d1996df1ac782dcdd0f75e9350`
 - Versión del producto: `3.0.0`
-- Bundle SHA-256 canónico:
+- Bundle SHA-256 de la ejecución operativa:
   `0ed03fb36b945cf920f0ab4f0de78bf4d0df7ae4affcdeb04015382eb5849073`
+- Bundle SHA-256 con hardening OAuth:
+  `c3036335114d5fe4e8deadffd135cb7df441fba99c9a45dc746d2f296c5b0051`
 - Entorno: hoja piloto y proyecto Apps Script vinculado, ambos no productivos
 - Identificadores de script, hoja, backup y cuenta: omitidos deliberadamente
 
-La revisión de release añade documentación sobre la revisión de código indicada. No
-cambia los archivos del bundle ni su hash canónico.
+La revisión de release original añade documentación sobre la revisión de código de la
+ejecución indicada. El hardening OAuth posterior cambia únicamente el manifiesto y
+sus controles de calidad; no se volvió a ejecutar `runGenerarERP`.
 
 ## Precondiciones
 
@@ -114,6 +119,40 @@ Antes de la activación se habían aprobado:
 - Hash canónico idéntico en dos reconstrucciones consecutivas.
 - Pruebas de aislamiento del contenedor activo.
 
+## Validación de permisos mínimos OAuth (2026-09-13)
+
+Después de la ejecución operativa se publicó exclusivamente en el proyecto piloto un
+bundle endurecido de 38 archivos. La lectura remota posterior confirmó igualdad byte
+a byte de los 37 scripts y equivalencia semántica del manifiesto. El manifiesto
+publicado declara únicamente:
+
+- `https://www.googleapis.com/auth/script.container.ui`
+- `https://www.googleapis.com/auth/spreadsheets.currentonly`
+
+No declara permisos de Google Drive ni el permiso amplio sobre todas las hojas de
+cálculo.
+
+Para validar el consentimiento real, se revocó la autorización anterior únicamente
+en una cuenta interna alternativa, no propietaria y sin identificar en este
+documento. Desde esa cuenta se invocó `Alef ERP → Verificar instalación`, una
+operación de comprobación que no ejecuta la generación. La autorización se completó
+y la instalación fue verificada correctamente.
+
+La vista de aplicaciones conectadas de Google registró el nuevo acceso como:
+“Permite ver y administrar las hojas de cálculo en las que se instaló esta
+aplicación.” No mostró acceso a Drive ni acceso general a todas las hojas de cálculo.
+
+Durante esta validación:
+
+- no se ejecutó `runGenerarERP`;
+- no se realizaron escrituras operativas en la hoja;
+- no se modificaron los entornos DEV, backup o producción; y
+- no se cambió la autorización de la cuenta propietaria.
+
+El control de mínimo privilegio queda aprobado para el piloto interno limitado. La
+verificación y el branding OAuth necesarios para incorporación pública de clientes
+permanecen fuera del alcance de esta evidencia.
+
 ## Limitaciones y operaciones no realizadas
 
 - No se ejecutó una segunda vez `runGenerarERP`.
@@ -122,7 +161,9 @@ Antes de la activación se habían aprobado:
 - No se creó una versión o implementación web/API.
 - No se crearon, modificaron ni eliminaron triggers instalables.
 - No se ejecutó una operación en producción.
-- No se concedió acceso a clientes.
+- Se utilizó una cuenta interna alternativa como editor del piloto; no se concedió
+  acceso a clientes.
+- No se completaron el branding ni la verificación pública OAuth de Google.
 - Las capturas no se incorporan al repositorio.
 - Este documento no contiene credenciales, IDs de recursos, URLs privadas, datos de
   negocio, payloads, variables de entorno, excepciones ni stack traces.
@@ -140,4 +181,9 @@ PILOT/DEV ISOLATION: VERIFIED
 SECOND EXECUTION: NOT PERFORMED
 CLIENT ACTIVATION: NOT AUTHORIZED BY THIS RECORD
 PRODUCTION DEPLOYMENT: NOT EXECUTED
+OAUTH LEAST-PRIVILEGE PILOT VALIDATION: PASSED
+OAUTH SPREADSHEET ACCESS: CURRENT DOCUMENT ONLY
+OAUTH DRIVE ACCESS: NONE
+ALTERNATE-ACCOUNT INSTALLATION CHECK: PASSED
+PUBLIC OAUTH VERIFICATION: NOT COMPLETED
 ```

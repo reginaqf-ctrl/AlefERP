@@ -9,6 +9,7 @@ deployment nor client access; those remain separate business decisions.
 ```text
 PILOT CANDIDATE PREPARATION: PASS
 ISOLATED PILOT OPERATIONAL VALIDATION: PASS
+OAUTH LEAST-PRIVILEGE PILOT VALIDATION: PASS
 PRODUCTION DEPLOYMENT: NOT AUTHORIZED
 CLIENT ACTIVATION: NOT AUTHORIZED BY THIS RECORD
 ```
@@ -18,6 +19,7 @@ CLIENT ACTIVATION: NOT AUTHORIZED BY THIS RECORD
 - Candidate branch: `release/AlefERP-3.0.0-rc1`
 - Operationally validated release revision: `4a295e021ac7c67a6173693b6317f954464608b9`
 - Candidate code revision: `4f392de5bf7dc02d3f242b26da73f10264d68a13`
+- OAuth hardening revision: `3c59bab456ad72d1996df1ac782dcdd0f75e9350`
 - Previously operationally tested revision: `5b42e13486874ba5e5edcccc9957380bb93aea96`
 - Product version: `3.0.0`
 - Runtime: Google Apps Script V8 bound to Google Sheets
@@ -26,9 +28,11 @@ CLIENT ACTIVATION: NOT AUTHORIZED BY THIS RECORD
 - Installable triggers: none identified in the commercial bundle
 
 Revision `4a295e0` adds release documentation over the product code in `4f392de`;
-the versioned commercial artifact identity is unchanged. Spreadsheet access resolves
-exclusively through `SpreadsheetApp.getActiveSpreadsheet()` and contains no fixed
-spreadsheet ID or `openById` fallback.
+the operationally executed commercial artifact identity is unchanged. Revision
+`3c59bab` subsequently restricts OAuth to the bound container UI and current
+spreadsheet only. Spreadsheet access resolves exclusively through
+`SpreadsheetApp.getActiveSpreadsheet()` and contains no fixed spreadsheet ID or
+`openById` fallback.
 
 ## 3. Commercial scope
 
@@ -75,6 +79,8 @@ The following external operations were then completed under separate authorizati
 | Authoritative deployment log | PASS — one new `OK` receipt with expected counts and zero warnings    |
 | Pilot/DEV isolation          | PASS — pilot received the receipt; DEV received no 2026-09-11 receipt |
 | Backup preservation          | PASS — pre-run receipt count and structural counts remained unchanged |
+| OAuth scope hardening        | PASS — current spreadsheet and container UI only; no Drive scope      |
+| Alternate-account consent    | PASS — prior grant revoked and installation check completed           |
 
 Local JSON evidence remains ephemeral and Git-ignored under `.qa-output/`. The
 sanitized durable operational record is
@@ -92,6 +98,17 @@ repository-relative paths and each file's SHA-256:
 Two consecutive clean reconstructions produced this exact hash. The corrected bundle
 deployed to the pilot contained the same 37 scripts and `appsscript.json` described by
 the approved manifest.
+
+The later OAuth-hardened bundle deployed to the same pilot is identified by:
+
+```text
+c3036335114d5fe4e8deadffd135cb7df441fba99c9a45dc746d2f296c5b0051
+```
+
+Its remote read-back confirmed all 37 scripts byte for byte and the manifest
+semantically. The manifest contains only `script.container.ui` and
+`spreadsheets.currentonly`; it contains neither a Drive scope nor a broad Sheets
+scope. No generation function was executed after this deployment.
 
 The repository now defines LF endings for JavaScript, JSON, Markdown, and QA script
 files through `.gitattributes`. This prevents `core.autocrlf` from changing artifact
@@ -142,6 +159,9 @@ validation, client acceptance, or production validation.
 | Expected counts, `OK` receipt, and zero warnings     | Complete   |
 | Pilot/DEV isolation                                  | Complete   |
 | Sanitized operational evidence                       | Complete   |
+| OAuth least-privilege validation                     | Complete   |
+| Alternate internal account installation check        | Complete   |
+| Public Google OAuth branding and verification        | Pending    |
 | Client access decision                               | Pending    |
 | Production deployment authorization                  | Prohibited |
 
@@ -164,7 +184,8 @@ adds installable triggers.
 
 ## 9. Remaining decision
 
-The isolated RC1 pilot has passed its controlled operational validation. No additional
-`runGenerarERP` execution is required to document this result. The next decision is
-whether to authorize limited client access to the isolated pilot under the agreed
-commercial scope. Production deployment remains prohibited.
+The isolated RC1 pilot has passed its controlled operational validation and its
+least-privilege OAuth validation with an alternate internal account. No additional
+`runGenerarERP` execution is required to document either result. Public customer
+onboarding still requires the separate Google OAuth branding and verification
+decision. Production deployment remains prohibited.
