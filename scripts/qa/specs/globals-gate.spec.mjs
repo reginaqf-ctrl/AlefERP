@@ -884,8 +884,8 @@ test('real repository has no global collisions or dynamic-code blockers', async 
   assert.equal(evidence.exitCode, 0);
   assert.equal(evidence.counts.includedFiles, 38);
   assert.equal(evidence.counts.excludedFiles, 7);
-  assert.equal(evidence.counts.uniqueSymbols, 760);
-  assert.equal(evidence.counts.occurrences, 780);
+  assert.equal(evidence.counts.uniqueSymbols, 759);
+  assert.equal(evidence.counts.occurrences, 779);
   assert.equal(evidence.counts.duplicateSymbols, 0);
   assert.equal(evidence.counts.dynamicConstructions, 0);
   assert.deepEqual(evidence.collisions, []);

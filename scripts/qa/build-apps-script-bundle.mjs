@@ -52,6 +52,17 @@ const POLICY_KEYS = Object.freeze([
   'requireV8',
   'rootFilesOnly'
 ]);
+const APPS_SCRIPT_MANIFEST_KEYS = Object.freeze([
+  'dependencies',
+  'exceptionLogging',
+  'oauthScopes',
+  'runtimeVersion',
+  'timeZone'
+]);
+const EXPECTED_OAUTH_SCOPES = Object.freeze([
+  'https://www.googleapis.com/auth/script.container.ui',
+  'https://www.googleapis.com/auth/spreadsheets.currentonly'
+]);
 const EXPECTED_ARTIFACT = Object.freeze({
   directory: '.qa-output/apps-script-bundle',
   evidencePath: '.qa-output/bundle-evidence.json',
@@ -307,16 +318,30 @@ export async function validateRepositoryInventory(root, manifest) {
     path.join(root, manifest.manifestFile),
     'APPS_SCRIPT_MANIFEST_INVALID'
   );
+  assertExactKeys(appsScriptManifest, APPS_SCRIPT_MANIFEST_KEYS, 'APPS_SCRIPT_MANIFEST_INVALID');
+  assertUniqueStringList(appsScriptManifest.oauthScopes, 'APPS_SCRIPT_OAUTH_SCOPES_INVALID');
   if (
-    !isPlainObject(appsScriptManifest) ||
     appsScriptManifest.runtimeVersion !== 'V8' ||
+    appsScriptManifest.exceptionLogging !== 'STACKDRIVER' ||
+    !isPlainObject(appsScriptManifest.dependencies) ||
+    Object.keys(appsScriptManifest.dependencies).length !== 0 ||
     typeof appsScriptManifest.timeZone !== 'string' ||
     appsScriptManifest.timeZone.length === 0
   ) {
     fail('APPS_SCRIPT_MANIFEST_INVALID');
   }
+  if (
+    appsScriptManifest.oauthScopes.length !== EXPECTED_OAUTH_SCOPES.length ||
+    appsScriptManifest.oauthScopes.some((scope, index) => scope !== EXPECTED_OAUTH_SCOPES[index])
+  ) {
+    fail('APPS_SCRIPT_OAUTH_SCOPES_INVALID');
+  }
 
-  return { discoveredJavaScript, expectedIgnoreLines };
+  return {
+    discoveredJavaScript,
+    expectedIgnoreLines,
+    oauthScopes: [...appsScriptManifest.oauthScopes]
+  };
 }
 
 function parseScript(source, file) {
@@ -1029,7 +1054,7 @@ export async function buildAppsScriptBundle({
     record.removedSelfExports.map(entrypoint => ({ path: record.path, ...entrypoint }))
   );
   const evidence = {
-    schemaVersion: '1.1.0',
+    schemaVersion: '1.2.0',
     runId,
     generatedAt,
     revision: currentRevision(root),
@@ -1064,6 +1089,11 @@ export async function buildAppsScriptBundle({
         removedEntrypoints: record.removedEntrypoints,
         removedSelfExports: record.removedSelfExports
       }))
+    },
+    authorization: {
+      oauthScopes: inventory.oauthScopes,
+      spreadsheetAccess: 'CURRENT_DOCUMENT_ONLY',
+      driveAccess: false
     },
     clasp: {
       prepared: prepareClasp,

@@ -120,6 +120,7 @@ test('repository inventory and positive clasp ignore agree exactly', async () =>
 test('build creates the exact isolated artifact and excludes all non-production JavaScript', async () => {
   const { root, manifest } = await createFixture();
   const evidence = await buildAppsScriptBundle({ root, persistEvidence: true });
+  assert.equal(evidence.schemaVersion, '1.2.0');
   assert.equal(evidence.result.ok, true);
   assert.equal(evidence.result.code, 'BUNDLE_VALID');
   assert.equal(evidence.inventory.includedJavaScript, 37);
@@ -127,6 +128,14 @@ test('build creates the exact isolated artifact and excludes all non-production 
   assert.equal(evidence.artifact.files.length, 38);
   assert.equal(evidence.runtime.compiled, true);
   assert.equal(evidence.runtime.loaded, true);
+  assert.deepEqual(evidence.authorization, {
+    oauthScopes: [
+      'https://www.googleapis.com/auth/script.container.ui',
+      'https://www.googleapis.com/auth/spreadsheets.currentonly'
+    ],
+    spreadsheetAccess: 'CURRENT_DOCUMENT_ONLY',
+    driveAccess: false
+  });
   assert.equal(evidence.runtime.retainedTestEntrypoints, 0);
   assert.deepEqual(evidence.runtime.smokeChecks, [
     'single-build-contract',
@@ -300,14 +309,49 @@ test('manifest and clasp allowlist schemas are closed', async () => {
   );
 });
 
-test('Apps Script manifest must use the V8 runtime', async () => {
+test('Apps Script manifest is closed and uses only current-document OAuth scopes', async () => {
   const { root, manifest } = await createFixture();
   const appsScriptPath = path.join(root, manifest.manifestFile);
   const appsScriptManifest = JSON.parse(await readFile(appsScriptPath, 'utf8'));
+  assert.deepEqual(appsScriptManifest.oauthScopes, [
+    'https://www.googleapis.com/auth/script.container.ui',
+    'https://www.googleapis.com/auth/spreadsheets.currentonly'
+  ]);
+
   appsScriptManifest.runtimeVersion = 'DEPRECATED_RUNTIME';
   await writeFile(appsScriptPath, `${JSON.stringify(appsScriptManifest, null, 2)}\n`);
   await assert.rejects(
     validateRepositoryInventory(root, manifest),
+    /APPS_SCRIPT_MANIFEST_INVALID/u
+  );
+
+  const broadSheets = await createFixture();
+  const broadSheetsPath = path.join(broadSheets.root, broadSheets.manifest.manifestFile);
+  const broadSheetsManifest = JSON.parse(await readFile(broadSheetsPath, 'utf8'));
+  broadSheetsManifest.oauthScopes[1] = 'https://www.googleapis.com/auth/spreadsheets';
+  await writeFile(broadSheetsPath, `${JSON.stringify(broadSheetsManifest, null, 2)}\n`);
+  await assert.rejects(
+    validateRepositoryInventory(broadSheets.root, broadSheets.manifest),
+    /APPS_SCRIPT_OAUTH_SCOPES_INVALID/u
+  );
+
+  const driveScope = await createFixture();
+  const driveScopePath = path.join(driveScope.root, driveScope.manifest.manifestFile);
+  const driveScopeManifest = JSON.parse(await readFile(driveScopePath, 'utf8'));
+  driveScopeManifest.oauthScopes.push('https://www.googleapis.com/auth/drive.readonly');
+  await writeFile(driveScopePath, `${JSON.stringify(driveScopeManifest, null, 2)}\n`);
+  await assert.rejects(
+    validateRepositoryInventory(driveScope.root, driveScope.manifest),
+    /APPS_SCRIPT_OAUTH_SCOPES_INVALID/u
+  );
+
+  const unknownKey = await createFixture();
+  const unknownKeyPath = path.join(unknownKey.root, unknownKey.manifest.manifestFile);
+  const unknownKeyManifest = JSON.parse(await readFile(unknownKeyPath, 'utf8'));
+  unknownKeyManifest.unapproved = true;
+  await writeFile(unknownKeyPath, `${JSON.stringify(unknownKeyManifest, null, 2)}\n`);
+  await assert.rejects(
+    validateRepositoryInventory(unknownKey.root, unknownKey.manifest),
     /APPS_SCRIPT_MANIFEST_INVALID/u
   );
 });
