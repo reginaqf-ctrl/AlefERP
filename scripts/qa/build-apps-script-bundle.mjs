@@ -63,6 +63,21 @@ const EXPECTED_OAUTH_SCOPES = Object.freeze([
   'https://www.googleapis.com/auth/script.container.ui',
   'https://www.googleapis.com/auth/spreadsheets.currentonly'
 ]);
+const FORBIDDEN_OAUTH_SERVICE_GLOBALS = new Set([
+  'CalendarApp',
+  'ContactsApp',
+  'DocumentApp',
+  'DriveApp',
+  'FormApp',
+  'GmailApp',
+  'GroupsApp',
+  'Jdbc',
+  'LanguageApp',
+  'MailApp',
+  'Maps',
+  'SlidesApp',
+  'UrlFetchApp'
+]);
 const EXPECTED_ARTIFACT = Object.freeze({
   directory: '.qa-output/apps-script-bundle',
   evidencePath: '.qa-output/bundle-evidence.json',
@@ -516,13 +531,21 @@ export function transformSourceForArtifact(source, file, policy) {
   ) {
     fail('EMBEDDED_TEST_ENTRYPOINT_RETAINED');
   }
+  const transformedReferenceByIdentifier = new WeakMap();
   for (const scope of transformedCapture.sourceCode.scopeManager.scopes) {
     for (const reference of [...scope.references, ...(scope.through || [])]) {
+      transformedReferenceByIdentifier.set(reference.identifier, reference);
       if (
         (!reference.resolved || reference.resolved.defs.length === 0) &&
         isEmbeddedTestEntrypoint(reference.identifier.name, policy.prefixes)
       ) {
         fail('EMBEDDED_TEST_REFERENCE_RETAINED');
+      }
+      if (
+        (!reference.resolved || reference.resolved.defs.length === 0) &&
+        FORBIDDEN_OAUTH_SERVICE_GLOBALS.has(reference.identifier.name)
+      ) {
+        fail('UNDECLARED_OAUTH_SERVICE_REFERENCE');
       }
     }
   }
@@ -537,12 +560,23 @@ export function transformSourceForArtifact(source, file, policy) {
         : node.property?.type === 'Identifier'
           ? node.property.name
           : null;
+      const objectReference = transformedReferenceByIdentifier.get(node.object);
+      const isRuntimeGlobal = !objectReference?.resolved?.defs?.length;
       if (
+        isRuntimeGlobal &&
         node.object.name === 'globalThis' &&
         property &&
         isEmbeddedTestEntrypoint(property, policy.prefixes)
       ) {
         fail('EMBEDDED_TEST_GLOBAL_MEMBER_RETAINED');
+      }
+      if (
+        isRuntimeGlobal &&
+        node.object.name === 'globalThis' &&
+        property &&
+        FORBIDDEN_OAUTH_SERVICE_GLOBALS.has(property)
+      ) {
+        fail('UNDECLARED_OAUTH_SERVICE_REFERENCE');
       }
     }
     for (const visitorKey of transformedCapture.sourceCode.visitorKeys[node.type] || []) {

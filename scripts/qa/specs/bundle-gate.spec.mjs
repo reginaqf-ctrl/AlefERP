@@ -146,6 +146,13 @@ test('build creates the exact isolated artifact and excludes all non-production 
     'workflow-failure-sanitization'
   ]);
   assert.ok(evidence.inventory.embeddedTestEntrypointsRemoved > 0);
+  const brandingArtifact = await readFile(
+    path.join(root, manifest.artifact.directory, '25_ProductBranding.js'),
+    'utf8'
+  );
+  assert.match(brandingArtifact, /CELL_MARK/u);
+  assert.doesNotMatch(brandingArtifact, /DriveApp/u);
+  assert.doesNotMatch(brandingArtifact, /1v2aRiUPMEh7WkU0EiuCDIH8WoC6F3mKO/u);
   assert.equal(
     evidence.transformation.files.reduce(
       (total, file) => total + file.removedEntrypoints.length,
@@ -259,6 +266,51 @@ test('cross-file test references and retained global test members fail closed', 
         manifest.embeddedTestEntrypoints
       ),
     /EMBEDDED_TEST_GLOBAL_MEMBER_RETAINED/u
+  );
+});
+
+test('undeclared OAuth services are rejected from retained production code', async () => {
+  const { root, manifest } = await createFixture();
+  await appendFile(
+    path.join(root, '25_ProductBranding.js'),
+    '\nfunction retainedDriveCaller() { return DriveApp.getFileById("fixture"); }\n'
+  );
+  await assert.rejects(
+    buildAppsScriptBundle({ root, persistEvidence: false }),
+    /UNDECLARED_OAUTH_SERVICE_REFERENCE/u
+  );
+
+  assert.doesNotThrow(() =>
+    transformSourceForArtifact(
+      'function localDriveAdapter(DriveApp) { return DriveApp.getFileById("fixture"); }\n',
+      'local-adapter.js',
+      manifest.embeddedTestEntrypoints
+    )
+  );
+  assert.throws(
+    () =>
+      transformSourceForArtifact(
+        'function retainedFetchCaller() { return UrlFetchApp.fetch("https://example.invalid"); }\n',
+        'network.js',
+        manifest.embeddedTestEntrypoints
+      ),
+    /UNDECLARED_OAUTH_SERVICE_REFERENCE/u
+  );
+  assert.throws(
+    () =>
+      transformSourceForArtifact(
+        'function retainedGlobalDriveCaller() { return globalThis.DriveApp.getFileById("fixture"); }\n',
+        'global-drive.js',
+        manifest.embeddedTestEntrypoints
+      ),
+    /UNDECLARED_OAUTH_SERVICE_REFERENCE/u
+  );
+  assert.doesNotThrow(() =>
+    transformSourceForArtifact(
+      'function localGlobalAdapter(globalThis) { return globalThis.DriveApp; }\n',
+      'local-global-adapter.js',
+      manifest.embeddedTestEntrypoints
+    )
   );
 });
 

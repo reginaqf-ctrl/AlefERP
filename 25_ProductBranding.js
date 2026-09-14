@@ -105,15 +105,15 @@ const AERP_BRAND = Object.freeze({
   /* --------------------------------------------------------
    * Activos visuales
    *
-   * Cada valor corresponde al ID de un archivo almacenado
-   * en Google Drive.
+   * Los activos comerciales deben poder renderizarse sin
+   * depender de archivos externos ni permisos adicionales.
    * --------------------------------------------------------
    */
 
   ASSETS: Object.freeze({
 
     LOGO_ISOTYPE:
-      '1v2aRiUPMEh7WkU0EiuCDIH8WoC6F3mKO',
+      '',
 
     LOGO_HORIZONTAL:
       '',
@@ -214,7 +214,10 @@ const AERP_ASSETS = Object.freeze({
       AERP_BRAND.ASSETS.LOGO_ISOTYPE,
 
     type:
-      'IMAGE',
+      'CELL_MARK',
+
+    mark:
+      'AERP',
 
     altText:
       AERP_BRAND.ALT_TEXT.LOGO_ISOTYPE,
@@ -1125,15 +1128,20 @@ function aerpGetBrandAsset_(assetName) {
 
 
 /**
- * Comprueba si un activo tiene un archivo configurado.
+ * Comprueba si un activo tiene un renderizador configurado.
  */
 function aerpHasBrandAsset_(assetName) {
   try {
     const asset =
       aerpGetBrandAsset_(assetName);
 
+    if (asset.type === 'CELL_MARK') {
+      return Boolean(
+        String(asset.mark || '').trim()
+      );
+    }
+
     return Boolean(
-      asset &&
       String(asset.id || '').trim()
     );
 
@@ -1144,38 +1152,7 @@ function aerpHasBrandAsset_(assetName) {
 
 
 /**
- * Obtiene el archivo de Google Drive asociado.
- */
-function aerpGetBrandAssetFile_(assetName) {
-  const asset =
-    aerpGetBrandAsset_(assetName);
-
-  const fileId =
-    String(asset.id || '').trim();
-
-  if (!fileId) {
-    throw new Error(
-      'El activo "' +
-      assetName +
-      '" todavía no tiene un archivo configurado.'
-    );
-  }
-
-  return DriveApp.getFileById(fileId);
-}
-
-
-/**
- * Obtiene el blob de un activo visual.
- */
-function aerpGetBrandAssetBlob_(assetName) {
-  return aerpGetBrandAssetFile_(assetName)
-    .getBlob();
-}
-
-
-/**
- * Inserta un activo registrado en una hoja.
+ * Inserta un activo registrado sin servicios externos.
  */
 function aerpInsertBrandAsset_(
   sheet,
@@ -1194,36 +1171,60 @@ function aerpInsertBrandAsset_(
   const asset =
     aerpGetBrandAsset_(assetName);
 
-  const blob =
-    aerpGetBrandAssetBlob_(assetName);
+  if (asset.type !== 'CELL_MARK') {
+    throw new Error(
+      'El activo "' +
+      assetName +
+      '" no tiene un renderizador local configurado.'
+    );
+  }
 
-  const image =
-    sheet.insertImage(
-      blob,
-      Number(anchorColumn || 1),
-      Number(anchorRow || 1)
+  const resolvedWidth =
+    Number(
+      width ||
+      asset.recommendedWidth ||
+      68
     );
 
-  image
-    .setWidth(
-      Number(
-        width ||
-        asset.recommendedWidth ||
-        72
-      )
-    )
-    .setHeight(
-      Number(
-        height ||
-        asset.recommendedHeight ||
-        72
-      )
-    )
-    .setAltTextDescription(
-      asset.altText || assetName
+  const resolvedHeight =
+    Number(
+      height ||
+      asset.recommendedHeight ||
+      68
     );
 
-  return image;
+  const fontSize =
+    Math.max(
+      AERP_TYPOGRAPHY.SIZES.SUBTITLE,
+      Math.min(
+        AERP_TYPOGRAPHY.SIZES.TITLE,
+        Math.round(
+          Math.min(
+            resolvedWidth,
+            resolvedHeight
+          ) / 4
+        )
+      )
+    );
+
+  return sheet
+    .getRange(
+      Number(anchorRow || 1),
+      Number(anchorColumn || 1)
+    )
+    .setValue(
+      String(asset.mark || '').trim()
+    )
+    .setFontFamily(
+      AERP_TYPOGRAPHY.FAMILY
+    )
+    .setFontSize(fontSize)
+    .setFontWeight('bold')
+    .setFontColor(
+      AERP_THEME.COLORS.TEXT_INVERSE
+    )
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
 }
 
 
@@ -1258,7 +1259,7 @@ function aerpRemoveBrandAssetsFromSheet_(sheet) {
 
 
 /**
- * Inserta el isotipo oficial de Alef.
+ * Inserta la marca tipográfica oficial de Alef.
  */
 function aerpInsertAlefLogo_(
   sheet,
@@ -1269,7 +1270,7 @@ function aerpInsertAlefLogo_(
 ) {
   aerpRemoveBrandAssetsFromSheet_(sheet);
 
-  const image =
+  const markRange =
     aerpInsertBrandAsset_(
       sheet,
       'LOGO_ISOTYPE',
@@ -1279,11 +1280,7 @@ function aerpInsertAlefLogo_(
       height || 68
     );
 
-  image
-    .setAnchorCellXOffset(12)
-    .setAnchorCellYOffset(4);
-
-  return image;
+  return markRange;
 }
 
 
@@ -2073,51 +2070,44 @@ function aerpValidateProductBranding_() {
 
 
 /**
- * Comprueba que el archivo del isotipo pueda leerse
- * correctamente desde Google Drive.
+ * Comprueba que la marca tipográfica local sea válida.
  */
-function aerpValidateAlefLogoFile_() {
+function testValidateAlefLogoMark_() {
   try {
     const asset =
       aerpGetBrandAsset_(
         'LOGO_ISOTYPE'
       );
 
-    const file =
-      aerpGetBrandAssetFile_(
-        'LOGO_ISOTYPE'
-      );
-
-    const blob =
-      file.getBlob();
-
-    const mimeType =
+    const mode =
       String(
-        blob.getContentType() || ''
+        asset.type || ''
       );
 
-    const isImage =
-      mimeType.indexOf('image/') === 0;
+    const mark =
+      String(
+        asset.mark || ''
+      ).trim();
+
+    const isValid =
+      mode === 'CELL_MARK' &&
+      Boolean(mark);
 
     return {
-      ok: isImage,
-      fileId: file.getId(),
-      fileName: file.getName(),
-      mimeType: mimeType,
-      sizeBytes: blob.getBytes().length,
+      ok: isValid,
+      mode: mode,
+      mark: mark,
       altText: asset.altText,
-      error: isImage
+      error: isValid
         ? ''
-        : 'El archivo configurado no es una imagen.'
+        : 'La marca tipográfica local no está configurada.'
     };
 
   } catch (error) {
     return {
       ok: false,
-      fileId: '',
-      fileName: '',
-      mimeType: '',
-      sizeBytes: 0,
+      mode: '',
+      mark: '',
       altText: '',
       error:
         error && error.message
@@ -2143,7 +2133,7 @@ function testProductBranding() {
     aerpValidateProductBranding_();
 
   const logoValidation =
-    aerpValidateAlefLogoFile_();
+    testValidateAlefLogoMark_();
 
   const brandSummary =
     aerpGetBrandSummary_();
@@ -2166,17 +2156,11 @@ function testProductBranding() {
       logoAvailable:
         logoValidation.ok,
 
-      logoFileId:
-        logoValidation.fileId,
+      logoRenderMode:
+        logoValidation.mode,
 
-      logoFileName:
-        logoValidation.fileName,
-
-      logoMimeType:
-        logoValidation.mimeType,
-
-      logoSizeBytes:
-        logoValidation.sizeBytes
+      logoMark:
+        logoValidation.mark
     },
 
     designSystem: {
