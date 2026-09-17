@@ -2,8 +2,8 @@
 
 ## 1. Estado
 
-**Propuesto para aprobación técnica.** No autoriza escrituras en hojas, publicación
-Apps Script, acceso de clientes ni producción.
+**Aprobado para implementación técnica el 2026-09-17.** No autoriza escrituras en
+hojas, publicación Apps Script, acceso de clientes ni producción.
 
 ## 2. Objetivo
 
@@ -82,18 +82,29 @@ El blueprint no incluirá nombres, IDs, correos ni reglas específicas de un cli
 - La actualización conserva datos del cliente y aplica migraciones versionadas.
 - Ninguna recuperación debe ampliar permisos ni cruzar empresas.
 
-## 5. Decisión arquitectónica pendiente
+## 5. Decisión arquitectónica aprobada para AppSheet
 
-El generador actual produce un paquete descriptivo de AppSheet, pero no aprovisiona
-una aplicación AppSheet real. Antes de implementar ese paso se debe elegir y aprobar
-uno de estos mecanismos:
+Alef ERP 1.0 utilizará una **plantilla AppSheet versionada y copiable** como mecanismo
+oficial de entrega. El instalador generará y validará la estructura de datos y el
+paquete descriptivo; el onboarding conducirá al cliente por la copia controlada de la
+plantilla aprobada y su vinculación con la hoja instalada.
 
-1. plantilla AppSheet versionada y copiable asociada a la instalación;
-2. aprovisionamiento mediante una capacidad oficial compatible con las cuentas objetivo;
-3. entrega asistida temporal, documentada como limitación de beta y no como flujo final.
+La decisión se basa en las capacidades oficiales documentadas por Google:
 
-La opción elegida debe respetar el mínimo privilegio y permitir una instalación
-reproducible. No se simulará el aprovisionamiento con un paquete descriptivo.
+- la API de AppSheet opera sobre tablas y acciones de una aplicación ya existente y
+  está limitada a planes Enterprise;
+- la creación soportada de aplicaciones parte de datos, una aplicación en blanco,
+  muestras, plantillas o complementos de Google Workspace.
+
+Referencias oficiales:
+
+- <https://support.google.com/appsheet/answer/10105398>
+- <https://support.google.com/appsheet/answer/11980957>
+
+La plantilla deberá incluir versión, hash, propietario, configuración esperada,
+matriz de vistas/roles y procedimiento de copia. El onboarding no marcará la
+instalación como completa hasta validar la vinculación de la copia. No se simulará el
+aprovisionamiento con el paquete descriptivo.
 
 ## 6. Criterios de aceptación
 

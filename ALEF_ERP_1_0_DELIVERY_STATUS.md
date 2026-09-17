@@ -35,6 +35,8 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 - Reconciliación del estado de entrega 1.0 contra evidencia posterior al documento QA
   inicial.
 - Definición del contrato de instalación/onboarding y del blueprint comercial MVP.
+- Mecanismo AppSheet aprobado: plantilla versionada y copiable; activo pendiente de
+  creación y validación.
 - Conversión del framework validado en un producto instalable por un usuario no técnico.
 
 ### Bloqueado
@@ -72,19 +74,19 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 
 ## RELEASE_BLOCKERS
 
-| ID    | Bloqueo                                        | Criticidad             | Criterio de cierre                                                                                                     |
-| ----- | ---------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| RB-01 | Instalador inexistente                         | Crítica                | Una instalación limpia crea empresa, administrador y configuración sin intervención técnica.                           |
-| RB-02 | Blueprint comercial no versionado              | Crítica                | El repositorio contiene un blueprint metadata-driven reproducible para todos los módulos MVP.                          |
-| RB-03 | AppSheet no aprovisionado                      | Crítica                | El flujo aprobado entrega una aplicación AppSheet utilizable o documenta y valida el mecanismo alternativo autorizado. |
-| RB-04 | Módulos MVP sin aceptación end-to-end          | Crítica                | Cada módulo obligatorio supera CRUD, permisos, datos inválidos y flujo principal.                                      |
-| RB-05 | Onboarding y administración incompletos        | Crítica                | Un usuario no técnico termina la primera configuración y puede administrar usuarios, roles y permisos.                 |
-| RB-06 | Verificación pública OAuth pendiente           | Alta                   | Consentimiento y branding autorizados para incorporación pública de clientes.                                          |
-| RB-07 | Quality Gate incompleto                        | Alta                   | Prettier pasa sobre el inventario aprobado y no introduce cambios funcionales.                                         |
-| RB-08 | Dependencias de desarrollo con alertas altas   | Alta                   | Dependencias actualizadas o riesgo residual aprobado y documentado.                                                    |
-| RB-09 | Documentación comercial y operativa incompleta | Alta                   | Todos los manuales y procedimientos exigidos están publicados y validados.                                             |
-| RB-10 | Beta cerrada pendiente                         | Crítica                | Al menos una beta cerrada completa los flujos principales con aceptación satisfactoria.                                |
-| RB-11 | Producción y clientes no autorizados           | Control de lanzamiento | Existe una decisión formal posterior al cierre de RB-01 a RB-10.                                                       |
+| ID    | Bloqueo                                        | Criticidad             | Criterio de cierre                                                                                                      |
+| ----- | ---------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| RB-01 | Instalador inexistente                         | Crítica                | Una instalación limpia crea empresa, administrador y configuración sin intervención técnica.                            |
+| RB-02 | Blueprint comercial no versionado              | Crítica                | El repositorio contiene un blueprint metadata-driven reproducible para todos los módulos MVP.                           |
+| RB-03 | Plantilla AppSheet no versionada ni validada   | Crítica                | La plantilla aprobada dispone de versión, hash, matriz de roles/vistas, procedimiento de copia y validación end-to-end. |
+| RB-04 | Módulos MVP sin aceptación end-to-end          | Crítica                | Cada módulo obligatorio supera CRUD, permisos, datos inválidos y flujo principal.                                       |
+| RB-05 | Onboarding y administración incompletos        | Crítica                | Un usuario no técnico termina la primera configuración y puede administrar usuarios, roles y permisos.                  |
+| RB-06 | Verificación pública OAuth pendiente           | Alta                   | Consentimiento y branding autorizados para incorporación pública de clientes.                                           |
+| RB-07 | Quality Gate incompleto                        | Alta                   | Prettier pasa sobre el inventario aprobado y no introduce cambios funcionales.                                          |
+| RB-08 | Dependencias de desarrollo con alertas altas   | Alta                   | Dependencias actualizadas o riesgo residual aprobado y documentado.                                                     |
+| RB-09 | Documentación comercial y operativa incompleta | Alta                   | Todos los manuales y procedimientos exigidos están publicados y validados.                                              |
+| RB-10 | Beta cerrada pendiente                         | Crítica                | Al menos una beta cerrada completa los flujos principales con aceptación satisfactoria.                                 |
+| RB-11 | Producción y clientes no autorizados           | Control de lanzamiento | Existe una decisión formal posterior al cierre de RB-01 a RB-10.                                                        |
 
 ## NEXT_ACTIONS
 
@@ -92,8 +94,8 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
    comercial versionado, preservando el núcleo estable y el principio Default DENY.
 2. Crear la matriz de cobertura de los módulos MVP y cerrar primero Administración,
    Productos, Inventario, Pedidos y Ventas con pruebas de permisos y multiempresa.
-3. Resolver el mecanismo de aprovisionamiento AppSheet y demostrar una instalación
-   limpia de extremo a extremo en un entorno aislado.
+3. Construir, versionar y validar la plantilla AppSheet aprobada; demostrar una
+   instalación limpia de extremo a extremo en un entorno aislado.
 4. Cerrar los gates de formato y dependencias; producir evidencia reproducible del
    candidato resultante.
 5. Completar manuales, ejecutar beta cerrada y preparar la decisión de lanzamiento.
