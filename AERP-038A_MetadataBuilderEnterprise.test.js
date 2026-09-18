@@ -5,10 +5,15 @@ const test = require('node:test');
 
 require('./AERP-038A_MetadataBuilderEnterprise');
 require('./AERP-040_CommercialBlueprint');
+require('./AERP-040_CommercialPresentationManifest');
 
 const build = globalThis.aerpBuildMetadataModelFromSchema;
 const buildCommercialBlueprint = globalThis.aerpBuildCommercialBlueprint;
 const validateCommercialBlueprint = globalThis.aerpValidateCommercialBlueprint;
+const buildCommercialPresentationManifest =
+  globalThis.aerpBuildCommercialPresentationManifestFromBlueprint;
+const validateCommercialPresentationManifest =
+  globalThis.aerpValidateCommercialPresentationManifest;
 
 function createColumn(overrides = {}) {
   return {
@@ -1245,5 +1250,190 @@ test('commercial blueprint is customer-neutral and returns independent copies', 
   const hostileResult = validateCommercialBlueprint(hostile);
   assert.equal(hostileResult.ok, false);
   assert.deepEqual(hostileResult.errors, ['AERP_BP_INVALID_BLUEPRINT']);
+  assert.doesNotMatch(JSON.stringify(hostileResult), /sensitive implementation detail/);
+});
+
+test('builds the deterministic Alef ERP 1.0 commercial presentation manifest', () => {
+  const blueprint = buildCommercialBlueprint();
+  const first = buildCommercialPresentationManifest(blueprint);
+  const second = buildCommercialPresentationManifest(buildCommercialBlueprint());
+
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.deepEqual(first, second);
+  assert.equal(first.contractVersion, '1.0.0');
+  assert.deepEqual(first.summary, {
+    views: 17,
+    menus: 8,
+    menuItems: 20,
+    dashboards: 3,
+    roleVisibilityRules: 3
+  });
+  assert.deepEqual(first.manifest.metadataTables, {
+    views: 'CORE_VISTAS',
+    menus: 'CORE_MENU',
+    menuItems: 'CORE_MENU_ITEM',
+    dashboards: 'CORE_DASHBOARDS'
+  });
+});
+
+test('presentation views reference every approved table and its exact module', () => {
+  const blueprint = buildCommercialBlueprint();
+  const result = buildCommercialPresentationManifest(blueprint);
+  const tables = new Map(blueprint.tables.map(table => [table.physicalName, table]));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.manifest.views.length, tables.size);
+  result.manifest.views.forEach(view => {
+    const table = tables.get(view.table);
+    assert.ok(table, `Unknown table for ${view.id}`);
+    assert.equal(view.module, table.module);
+    assert.equal(view.type, 'Table');
+    assert.equal(view.active, true);
+  });
+});
+
+test('presentation navigation has no orphan menus, items, views or dashboards', () => {
+  const result = buildCommercialPresentationManifest(buildCommercialBlueprint());
+  const manifest = result.manifest;
+  const menus = new Map(manifest.menus.map(menu => [menu.menuId, menu]));
+  const views = new Map(manifest.views.map(view => [view.id, view]));
+  const dashboards = new Map(manifest.dashboards.map(dashboard => [dashboard.id, dashboard]));
+  const targetedViews = new Set();
+  const targetedDashboards = new Set();
+
+  assert.equal(result.ok, true);
+  manifest.menuItems.forEach(item => {
+    const menu = menus.get(item.menuId);
+    assert.ok(menu, `Unknown menu for ${item.itemId}`);
+    assert.equal(item.moduleCode, menu.moduleCode);
+    if (item.targetType === 'VIEW') {
+      assert.ok(views.has(item.targetId), `Unknown view for ${item.itemId}`);
+      targetedViews.add(item.targetId);
+    } else {
+      assert.equal(item.targetType, 'DASHBOARD');
+      assert.ok(dashboards.has(item.targetId), `Unknown dashboard for ${item.itemId}`);
+      targetedDashboards.add(item.targetId);
+    }
+  });
+  assert.equal(targetedViews.size, manifest.views.length);
+  assert.equal(targetedDashboards.size, manifest.dashboards.length);
+});
+
+test('commercial dashboards reference valid tables, views and widget fields', () => {
+  const blueprint = buildCommercialBlueprint();
+  const result = buildCommercialPresentationManifest(blueprint);
+  const tables = new Map(blueprint.tables.map(table => [table.physicalName, table]));
+  const views = new Set(result.manifest.views.map(view => view.id));
+
+  assert.equal(result.ok, true);
+  result.manifest.dashboards.forEach(dashboard => {
+    dashboard.tableReferences.forEach(tableName => assert.ok(tables.has(tableName)));
+    dashboard.viewReferences.forEach(viewId => assert.ok(views.has(viewId)));
+    dashboard.widgets.forEach(widget => {
+      const table = tables.get(widget.table);
+      assert.ok(table);
+      assert.ok(table.columns.some(column => column.Nombre_Campo === widget.field));
+      assert.ok(dashboard.tableReferences.includes(widget.table));
+    });
+  });
+});
+
+test('presentation visibility is separate from authorization and defaults to hidden', () => {
+  const result = buildCommercialPresentationManifest(buildCommercialBlueprint());
+  const separation = result.manifest.separation;
+  const allModules = new Set(result.manifest.menus.map(menu => menu.moduleCode));
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(separation, {
+    authorizationEngine: 'AERP-036',
+    metadataRepository: 'AERP-037',
+    authorizationDecision: 'EXTERNAL_REQUIRED',
+    defaultVisibility: 'HIDDEN',
+    visibilityGrantsAuthorization: false,
+    denyPrecedence: true
+  });
+  result.manifest.roleVisibility.forEach(rule => {
+    rule.modules.forEach(moduleCode => assert.ok(allModules.has(moduleCode)));
+  });
+  assert.deepEqual(
+    result.manifest.roleVisibility.map(rule => rule.roleCode),
+    ['ADMINISTRADOR', 'LECTOR', 'OPERADOR']
+  );
+});
+
+test('presentation menus remain compatible with AERP-036 metadata aliases', () => {
+  const result = buildCommercialPresentationManifest(buildCommercialBlueprint());
+
+  assert.equal(result.ok, true);
+  result.manifest.menus.forEach(menu => {
+    ['menuId', 'menuCode', 'name', 'active'].forEach(field =>
+      assert.equal(Object.hasOwn(menu, field), true)
+    );
+  });
+  result.manifest.menuItems.forEach(item => {
+    ['itemId', 'itemCode', 'menuId', 'moduleCode', 'actionCode', 'active'].forEach(field =>
+      assert.equal(Object.hasOwn(item, field), true)
+    );
+    assert.equal(item.actionCode, 'VIEW');
+  });
+});
+
+test('presentation validation fails closed for every orphan reference class', () => {
+  const blueprint = buildCommercialBlueprint();
+
+  const badView = buildCommercialPresentationManifest(blueprint).manifest;
+  badView.views[0].table = 'UNKNOWN_TABLE';
+  const badViewResult = validateCommercialPresentationManifest(badView, blueprint);
+  assert.equal(badViewResult.ok, false);
+  assert.ok(badViewResult.errors.includes('AERP_PM_UNKNOWN_VIEW_TABLE:' + badView.views[0].id));
+
+  const badItem = buildCommercialPresentationManifest(blueprint).manifest;
+  badItem.menuItems[0].targetId = 'UNKNOWN_VIEW';
+  const badItemResult = validateCommercialPresentationManifest(badItem, blueprint);
+  assert.equal(badItemResult.ok, false);
+  assert.ok(
+    badItemResult.errors.includes('AERP_PM_UNKNOWN_MENU_ITEM_TARGET:' + badItem.menuItems[0].itemId)
+  );
+
+  const badDashboard = buildCommercialPresentationManifest(blueprint).manifest;
+  badDashboard.dashboards[0].widgets[0].field = 'UNKNOWN_FIELD';
+  const badDashboardResult = validateCommercialPresentationManifest(badDashboard, blueprint);
+  assert.equal(badDashboardResult.ok, false);
+  assert.ok(
+    badDashboardResult.errors.includes(
+      'AERP_PM_UNKNOWN_WIDGET_FIELD:' + badDashboard.dashboards[0].widgets[0].id
+    )
+  );
+});
+
+test('presentation manifest is customer-neutral, copy-safe and sanitizes hostile input', () => {
+  const blueprint = buildCommercialBlueprint();
+  const first = buildCommercialPresentationManifest(blueprint);
+  first.manifest.views[0].name = 'mutated';
+  first.manifest.roleVisibility[0].modules.length = 0;
+
+  const second = buildCommercialPresentationManifest(buildCommercialBlueprint());
+  assert.notEqual(second.manifest.views[0].name, 'mutated');
+  assert.notEqual(second.manifest.roleVisibility[0].modules.length, 0);
+  assert.doesNotMatch(JSON.stringify(second), /@|gmail|alefadvertisingcorp|rquintana/i);
+
+  const hostile = {};
+  Object.defineProperty(hostile, 'views', {
+    get() {
+      throw new Error('sensitive implementation detail');
+    }
+  });
+  const hostileResult = validateCommercialPresentationManifest(hostile, blueprint);
+  assert.deepEqual(hostileResult, {
+    ok: false,
+    errors: ['AERP_PM_INVALID_MANIFEST'],
+    summary: {
+      views: 0,
+      menus: 0,
+      menuItems: 0,
+      dashboards: 0,
+      roleVisibilityRules: 0
+    }
+  });
   assert.doesNotMatch(JSON.stringify(hostileResult), /sensitive implementation detail/);
 });

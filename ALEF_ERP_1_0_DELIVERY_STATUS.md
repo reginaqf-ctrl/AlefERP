@@ -4,7 +4,7 @@
 
 **Rama evaluada:** `release/AlefERP-3.0.0-rc1`
 
-**Revisión evaluada:** `00657af7e7c9b6e94683c9b43b4c160fd5ef59c1`
+**Base aprobada AERP-040:** `ad847dd46a8877d8d0abb927b51e77733014ad26`
 
 **Rama de implementación AERP-040:** `feature/AERP-040-commercial-blueprint`
 
@@ -22,24 +22,29 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 - Framework Core, Metadata Engine, Layout Engine, Dashboard Framework y UI Framework.
 - Security Foundation, Authorization Engine y Authorization Metadata Repository.
 - Pipeline único de metadata, generator y paquete AppSheet descriptivo.
-- Bundle comercial controlado: 37 scripts y `appsscript.json`.
+- Bundle comercial controlado: 39 scripts y `appsscript.json`.
 - Piloto aislado no productivo con resultado operativo satisfactorio.
 - Aislamiento de la hoja vinculada y OAuth de mínimo privilegio validados.
 - Caso demo comercial web publicado de forma privada.
 - Baseline AERP-040 del blueprint comercial implementado como `FrameworkSchema` puro,
   versionado y neutral respecto del cliente: 17 tablas, 8 áreas funcionales y 16
   tablas dependientes con tenant obligatorio.
+- Manifiesto de presentación AERP-040 completo y validado: 17 vistas, 8 menús, 20
+  elementos de navegación, 3 dashboards comerciales y 3 reglas de visibilidad por rol.
+- Separación explícita entre autorización AERP-036/AERP-037, visibilidad y navegación;
+  visibilidad oculta por defecto y sin capacidad de conceder acceso.
 - Controles ejecutados sobre la revisión evaluada:
-  - pruebas canónicas: **248/248**, sin fallos ni omisiones;
-  - Globals Gate: **773 símbolos**, cero duplicados y cero construcciones dinámicas bloqueadas;
-  - Bundle Gate: **18/18**, 38 scripts y 39 archivos en el artefacto;
+  - pruebas canónicas: **256/256**, sin fallos ni omisiones;
+  - Globals Gate: **801 símbolos**, cero duplicados y cero construcciones dinámicas bloqueadas;
+  - Bundle Gate: **18/18**, 39 scripts y 40 archivos en el artefacto;
   - ESLint: sin errores.
 
 ### En curso
 
 - Reconciliación del estado de entrega 1.0 contra evidencia posterior al documento QA
   inicial.
-- Integración del blueprint comercial MVP con el preflight y el instalador.
+- Integración del blueprint y su manifiesto de presentación con el preflight y el
+  instalador.
 - Mecanismo AppSheet aprobado: plantilla versionada y copiable; activo pendiente de
   creación y validación.
 - Conversión del framework validado en un producto instalable por un usuario no técnico.
@@ -48,8 +53,8 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 
 - El archivo `11_Installer.js` valida una instalación existente, pero no crea una
   instalación, empresa, administrador ni configuración inicial.
-- El baseline de datos del blueprint ya existe, pero todavía no incluye el manifiesto
-  completo de vistas, menús y dashboards ni está conectado al instalador.
+- El blueprint y el manifiesto completo de vistas, menús y dashboards ya existen; RB-02
+  queda bloqueado únicamente porque el instalador todavía no los consume.
 - `16_AppSheetGenerator.js` construye y valida un paquete AppSheet descriptivo, pero no
   aprovisiona ni configura una aplicación AppSheet real.
 - Los módulos comerciales MVP no disponen todavía de evidencia end-to-end completa de
@@ -79,24 +84,24 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 
 ## RELEASE_BLOCKERS
 
-| ID    | Bloqueo                                        | Criticidad             | Criterio de cierre                                                                                                      |
-| ----- | ---------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| RB-01 | Instalador inexistente                         | Crítica                | Una instalación limpia crea empresa, administrador y configuración sin intervención técnica.                            |
-| RB-02 | Blueprint comercial aún no integrado           | Crítica                | El baseline de datos se completa con vistas, menús y dashboards, y el instalador lo consume de forma reproducible.      |
-| RB-03 | Plantilla AppSheet no versionada ni validada   | Crítica                | La plantilla aprobada dispone de versión, hash, matriz de roles/vistas, procedimiento de copia y validación end-to-end. |
-| RB-04 | Módulos MVP sin aceptación end-to-end          | Crítica                | Cada módulo obligatorio supera CRUD, permisos, datos inválidos y flujo principal.                                       |
-| RB-05 | Onboarding y administración incompletos        | Crítica                | Un usuario no técnico termina la primera configuración y puede administrar usuarios, roles y permisos.                  |
-| RB-06 | Verificación pública OAuth pendiente           | Alta                   | Consentimiento y branding autorizados para incorporación pública de clientes.                                           |
-| RB-07 | Quality Gate incompleto                        | Alta                   | Prettier pasa sobre el inventario aprobado y no introduce cambios funcionales.                                          |
-| RB-08 | Dependencias de desarrollo con alertas altas   | Alta                   | Dependencias actualizadas o riesgo residual aprobado y documentado.                                                     |
-| RB-09 | Documentación comercial y operativa incompleta | Alta                   | Todos los manuales y procedimientos exigidos están publicados y validados.                                              |
-| RB-10 | Beta cerrada pendiente                         | Crítica                | Al menos una beta cerrada completa los flujos principales con aceptación satisfactoria.                                 |
-| RB-11 | Producción y clientes no autorizados           | Control de lanzamiento | Existe una decisión formal posterior al cierre de RB-01 a RB-10.                                                        |
+| ID    | Bloqueo                                          | Criticidad             | Criterio de cierre                                                                                                      |
+| ----- | ------------------------------------------------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| RB-01 | Instalador inexistente                           | Crítica                | Una instalación limpia crea empresa, administrador y configuración sin intervención técnica.                            |
+| RB-02 | Blueprint pendiente de integración con installer | Crítica                | El instalador consume de forma reproducible el blueprint y su manifiesto de presentación ya validados.                  |
+| RB-03 | Plantilla AppSheet no versionada ni validada     | Crítica                | La plantilla aprobada dispone de versión, hash, matriz de roles/vistas, procedimiento de copia y validación end-to-end. |
+| RB-04 | Módulos MVP sin aceptación end-to-end            | Crítica                | Cada módulo obligatorio supera CRUD, permisos, datos inválidos y flujo principal.                                       |
+| RB-05 | Onboarding y administración incompletos          | Crítica                | Un usuario no técnico termina la primera configuración y puede administrar usuarios, roles y permisos.                  |
+| RB-06 | Verificación pública OAuth pendiente             | Alta                   | Consentimiento y branding autorizados para incorporación pública de clientes.                                           |
+| RB-07 | Quality Gate incompleto                          | Alta                   | Prettier pasa sobre el inventario aprobado y no introduce cambios funcionales.                                          |
+| RB-08 | Dependencias de desarrollo con alertas altas     | Alta                   | Dependencias actualizadas o riesgo residual aprobado y documentado.                                                     |
+| RB-09 | Documentación comercial y operativa incompleta   | Alta                   | Todos los manuales y procedimientos exigidos están publicados y validados.                                              |
+| RB-10 | Beta cerrada pendiente                           | Crítica                | Al menos una beta cerrada completa los flujos principales con aceptación satisfactoria.                                 |
+| RB-11 | Producción y clientes no autorizados             | Control de lanzamiento | Existe una decisión formal posterior al cierre de RB-01 a RB-10.                                                        |
 
 ## NEXT_ACTIONS
 
-1. Integrar el blueprint AERP-040 con el preflight y el instalador, preservando el
-   núcleo estable y el principio Default DENY.
+1. Integrar el blueprint y el manifiesto AERP-040 con el preflight y el instalador,
+   preservando el núcleo estable y el principio Default DENY.
 2. Crear la matriz de cobertura de los módulos MVP y cerrar primero Administración,
    Productos, Inventario, Pedidos y Ventas con pruebas de permisos y multiempresa.
 3. Construir, versionar y validar la plantilla AppSheet aprobada; demostrar una
@@ -118,12 +123,13 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 
 ## Evidencia de esta revisión
 
-- `npm test`: PASS — 248/248.
-- `npm run qa:globals`: PASS — 773 símbolos, 0 duplicados, 0 violaciones dinámicas.
-- `npm run test:bundle`: PASS — 18/18; 38 scripts y 39 archivos en el artefacto.
+- `npm test`: PASS — 256/256.
+- `npm run qa:globals`: PASS — 801 símbolos, 0 duplicados, 0 violaciones dinámicas.
+- `npm run test:bundle`: PASS — 18/18; 39 scripts y 40 archivos en el artefacto.
 - `npm run lint`: PASS.
 - `npm run format:check`: FAIL — 19 archivos fuera del formato aprobado.
 - `npm audit`: seis alertas altas, todas dentro de la cadena de herramientas de
   desarrollo; no incluidas en el bundle Apps Script.
-- Inspección de código: el instalador actual sigue siendo únicamente un validador; el
-  blueprint aún no escribe hojas ni integra el activo AppSheet aprobado.
+- Inspección de código: el instalador actual sigue siendo únicamente un validador; aún
+  no consume el blueprint ni su manifiesto de presentación y no integra el activo
+  AppSheet aprobado.
