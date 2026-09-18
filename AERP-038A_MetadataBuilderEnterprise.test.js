@@ -6,6 +6,7 @@ const test = require('node:test');
 require('./AERP-038A_MetadataBuilderEnterprise');
 require('./AERP-040_CommercialBlueprint');
 require('./AERP-040_CommercialPresentationManifest');
+require('./11_Installer');
 
 const build = globalThis.aerpBuildMetadataModelFromSchema;
 const buildCommercialBlueprint = globalThis.aerpBuildCommercialBlueprint;
@@ -14,6 +15,8 @@ const buildCommercialPresentationManifest =
   globalThis.aerpBuildCommercialPresentationManifestFromBlueprint;
 const validateCommercialPresentationManifest =
   globalThis.aerpValidateCommercialPresentationManifest;
+const buildCommercialInstallerPlan = globalThis.aerpBuildCommercialInstallerPlan;
+const installCheck = globalThis.aerpInstallCheck;
 
 function createColumn(overrides = {}) {
   return {
@@ -1436,4 +1439,207 @@ test('presentation manifest is customer-neutral, copy-safe and sanitizes hostile
     }
   });
   assert.doesNotMatch(JSON.stringify(hostileResult), /sensitive implementation detail/);
+});
+
+test('installer builds one deterministic immutable plan from the approved commercial artifacts', () => {
+  const first = buildCommercialInstallerPlan();
+  const second = buildCommercialInstallerPlan();
+
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.deepEqual(first, second);
+  assert.equal(Object.isFrozen(first), true);
+  assert.equal(Object.isFrozen(first.blueprint), true);
+  assert.equal(Object.isFrozen(first.presentationManifest), true);
+  assert.deepEqual(first.summary, {
+    tables: 17,
+    columns: first.blueprint.summary.columns,
+    tenantScopedTables: 16,
+    modules: 8,
+    views: 17,
+    menus: 8,
+    menuItems: 20,
+    dashboards: 3,
+    roleVisibilityRules: 3
+  });
+  assert.doesNotMatch(JSON.stringify(first), /@|gmail|alefadvertisingcorp|rquintana/i);
+});
+
+test('installer derives presentation from the exact validated blueprint once', () => {
+  const originalBlueprintBuilder = globalThis.aerpBuildCommercialBlueprint;
+  const originalBlueprintValidator = globalThis.aerpValidateCommercialBlueprint;
+  const originalPresentationBuilder =
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint;
+  const originalPresentationValidator = globalThis.aerpValidateCommercialPresentationManifest;
+  const calls = {
+    blueprint: 0,
+    blueprintValidation: 0,
+    presentation: 0,
+    presentationValidation: 0
+  };
+  let blueprintIdentity = null;
+
+  try {
+    globalThis.aerpBuildCommercialBlueprint = function () {
+      calls.blueprint += 1;
+      blueprintIdentity = originalBlueprintBuilder();
+      return blueprintIdentity;
+    };
+    globalThis.aerpValidateCommercialBlueprint = function (blueprint) {
+      calls.blueprintValidation += 1;
+      assert.equal(blueprint, blueprintIdentity);
+      return originalBlueprintValidator(blueprint);
+    };
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint = function (blueprint) {
+      calls.presentation += 1;
+      assert.equal(blueprint, blueprintIdentity);
+      return originalPresentationBuilder(blueprint);
+    };
+    globalThis.aerpValidateCommercialPresentationManifest = function (manifest, blueprint) {
+      calls.presentationValidation += 1;
+      assert.equal(blueprint, blueprintIdentity);
+      return originalPresentationValidator(manifest, blueprint);
+    };
+
+    const result = buildCommercialInstallerPlan();
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.deepEqual(calls, {
+      blueprint: 1,
+      blueprintValidation: 4,
+      presentation: 1,
+      presentationValidation: 1
+    });
+  } finally {
+    globalThis.aerpBuildCommercialBlueprint = originalBlueprintBuilder;
+    globalThis.aerpValidateCommercialBlueprint = originalBlueprintValidator;
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint = originalPresentationBuilder;
+    globalThis.aerpValidateCommercialPresentationManifest = originalPresentationValidator;
+  }
+});
+
+test('installer fails closed when a commercial dependency is unavailable', () => {
+  const originalBlueprintBuilder = globalThis.aerpBuildCommercialBlueprint;
+  try {
+    globalThis.aerpBuildCommercialBlueprint = undefined;
+    const result = buildCommercialInstallerPlan();
+    assert.equal(result.ok, false);
+    assert.equal(result.blueprint, null);
+    assert.equal(result.presentationManifest, null);
+    assert.deepEqual(result.errors, ['AERP_INSTALLER_DEPENDENCY_UNAVAILABLE']);
+  } finally {
+    globalThis.aerpBuildCommercialBlueprint = originalBlueprintBuilder;
+  }
+});
+
+test('installer stops before presentation when blueprint validation fails', () => {
+  const originalBlueprintBuilder = globalThis.aerpBuildCommercialBlueprint;
+  const originalPresentationBuilder =
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint;
+  let presentationCalls = 0;
+  try {
+    globalThis.aerpBuildCommercialBlueprint = function () {
+      return null;
+    };
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint = function () {
+      presentationCalls += 1;
+      throw new Error('PRIVATE_PRESENTATION_CALL');
+    };
+    const result = buildCommercialInstallerPlan();
+    assert.equal(result.ok, false);
+    assert.equal(presentationCalls, 0);
+    assert.deepEqual(result.errors, ['AERP_INSTALLER_BLUEPRINT_INVALID']);
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE_/);
+  } finally {
+    globalThis.aerpBuildCommercialBlueprint = originalBlueprintBuilder;
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint = originalPresentationBuilder;
+  }
+});
+
+test('installer rejects invalid presentation without leaking partial artifacts', () => {
+  const originalPresentationBuilder =
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint;
+  try {
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint = function () {
+      throw new Error('PRIVATE_PRESENTATION_FAILURE');
+    };
+    const result = buildCommercialInstallerPlan();
+    assert.equal(result.ok, false);
+    assert.equal(result.blueprint, null);
+    assert.equal(result.presentationManifest, null);
+    assert.deepEqual(result.errors, ['AERP_INSTALLER_INTERNAL_ERROR']);
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|stack/);
+  } finally {
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint = originalPresentationBuilder;
+  }
+});
+
+test('installer preserves Default DENY and rejects visibility as authorization', () => {
+  const originalPresentationBuilder =
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint;
+  try {
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint = function (blueprint) {
+      const result = originalPresentationBuilder(blueprint);
+      result.manifest.separation.defaultVisibility = 'VISIBLE';
+      result.manifest.separation.visibilityGrantsAuthorization = true;
+      return result;
+    };
+    const result = buildCommercialInstallerPlan();
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.errors, ['AERP_INSTALLER_PRESENTATION_INVALID']);
+    assert.equal(result.blueprint, null);
+    assert.equal(result.presentationManifest, null);
+  } finally {
+    globalThis.aerpBuildCommercialPresentationManifestFromBlueprint = originalPresentationBuilder;
+  }
+});
+
+test('installation preflight consumes the commercial plan and exposes a sanitized summary', () => {
+  const originalBlueprintBuilder = globalThis.aerpBuildCommercialBlueprint;
+  const previousVersion = globalThis.AERP_VERSION;
+  const previousSheets = globalThis.AERP_SHEETS;
+  const previousLogger = globalThis.Logger;
+  const previousGetSheet = globalThis.aerpGetSheet;
+  try {
+    globalThis.AERP_VERSION = '3.0.0';
+    globalThis.AERP_SHEETS = {
+      CORE_TABLAS: 'CORE_TABLAS',
+      CORE_COLUMNAS: 'CORE_COLUMNAS',
+      GEN_REGLAS: 'GEN_REGLAS',
+      GEN_ACCIONES: 'GEN_ACCIONES',
+      CAT_ESTADOS: 'CAT_ESTADOS'
+    };
+    globalThis.Logger = { log() {} };
+    globalThis.aerpGetSheet = function () {
+      throw new Error('EXPECTED_MISSING_SHEET');
+    };
+
+    const result = installCheck();
+    assert.equal(result.commercialPlan.ok, true);
+    assert.equal(result.commercialPlan.blueprintVersion, '1.0.0');
+    assert.equal(result.commercialPlan.presentationVersion, '1.0.0');
+    assert.equal(result.commercialPlan.summary.tables, 17);
+    assert.equal(result.commercialPlan.summary.views, 17);
+    assert.deepEqual(result.commercialPlan.security, {
+      authorizationEngine: 'AERP-036',
+      metadataRepository: 'AERP-037',
+      authorizationDecision: 'EXTERNAL_REQUIRED',
+      defaultVisibility: 'HIDDEN',
+      visibilityGrantsAuthorization: false,
+      denyPrecedence: true
+    });
+    assert.equal(Object.hasOwn(result.commercialPlan, 'blueprint'), false);
+    assert.equal(Object.hasOwn(result.commercialPlan, 'presentationManifest'), false);
+
+    globalThis.aerpBuildCommercialBlueprint = undefined;
+    const denied = installCheck();
+    assert.equal(denied.ok, false);
+    assert.equal(denied.commercialPlan.ok, false);
+    assert.deepEqual(denied.commercialPlan.errors, ['AERP_INSTALLER_DEPENDENCY_UNAVAILABLE']);
+    assert.ok(denied.errors.includes('El plan comercial AERP-040 no superó el preflight.'));
+  } finally {
+    globalThis.aerpBuildCommercialBlueprint = originalBlueprintBuilder;
+    globalThis.AERP_VERSION = previousVersion;
+    globalThis.AERP_SHEETS = previousSheets;
+    globalThis.Logger = previousLogger;
+    globalThis.aerpGetSheet = previousGetSheet;
+  }
 });
