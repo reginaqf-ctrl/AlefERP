@@ -4,8 +4,11 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 require('./AERP-038A_MetadataBuilderEnterprise');
+require('./AERP-040_CommercialBlueprint');
 
 const build = globalThis.aerpBuildMetadataModelFromSchema;
+const buildCommercialBlueprint = globalThis.aerpBuildCommercialBlueprint;
+const validateCommercialBlueprint = globalThis.aerpValidateCommercialBlueprint;
 
 function createColumn(overrides = {}) {
   return {
@@ -1069,4 +1072,178 @@ test('diagnostics expose only the frozen public shape and deterministic order', 
   first.diagnostics.forEach(diagnostic => {
     assert.deepEqual(Object.keys(diagnostic), ['code', 'severity', 'path', 'message']);
   });
+});
+
+test('builds the deterministic Alef ERP 1.0 commercial data blueprint', () => {
+  const first = buildCommercialBlueprint();
+  const second = buildCommercialBlueprint();
+  const expectedTables = [
+    'CORE_CONFIGURACION',
+    'CORE_EMPRESAS',
+    'CORE_MODULOS',
+    'CORE_PERMISOS',
+    'CORE_ROLES',
+    'CORE_ROL_MODULO',
+    'CORE_USUARIOS',
+    'CORE_USUARIO_ROL',
+    'ERP_CLIENTES',
+    'ERP_INVENTARIO',
+    'ERP_MOVIMIENTOS_INVENTARIO',
+    'ERP_PEDIDOS',
+    'ERP_PEDIDO_DETALLE',
+    'ERP_PRODUCTOS',
+    'ERP_PROVEEDORES',
+    'ERP_VENTAS',
+    'ERP_VENTA_DETALLE'
+  ];
+
+  assert.deepEqual(first, second);
+  assert.equal(first.version, '1.0.0');
+  assert.deepEqual(first.tables.map(table => table.physicalName).sort(), expectedTables);
+  assert.deepEqual(validateCommercialBlueprint(first), {
+    ok: true,
+    errors: [],
+    summary: {
+      version: '1.0.0',
+      tables: 17,
+      columns: first.summary.columns,
+      tenantScopedTables: 16,
+      modules: 8
+    }
+  });
+});
+
+test('commercial blueprint satisfies the strict MetadataModel contract', () => {
+  const result = build(buildCommercialBlueprint());
+
+  assert.equal(result.ok, true, JSON.stringify(result.diagnostics));
+  assert.equal(result.model.tables.length, 17);
+  assert.equal(result.summary.foreignKeys > 20, true);
+  assert.equal(
+    result.diagnostics.some(item => item.severity === 'ERROR'),
+    false
+  );
+});
+
+test('commercial blueprint enforces tenant isolation on every dependent table', () => {
+  const schema = buildCommercialBlueprint();
+
+  schema.tables
+    .filter(table => table.physicalName !== 'CORE_EMPRESAS')
+    .forEach(table => {
+      const tenantColumn = table.columns.find(column => column.Nombre_Campo === 'ID_Empresa');
+      assert.ok(tenantColumn, `${table.physicalName} must declare ID_Empresa`);
+      assert.equal(tenantColumn.Tipo_Dato, 'Ref');
+      assert.equal(tenantColumn.Tabla_Referencia, 'CORE_EMPRESAS');
+      assert.equal(tenantColumn.Es_Requerido, true);
+      assert.equal(tenantColumn.Permite_Nulos, false);
+      assert.equal(tenantColumn.Visible, false);
+      assert.equal(tenantColumn.Editable, false);
+    });
+});
+
+test('commercial blueprint exposes the exact authorization metadata headers', () => {
+  const schema = buildCommercialBlueprint();
+  const byName = Object.fromEntries(schema.tables.map(table => [table.physicalName, table]));
+  const columnNames = table => table.columns.map(column => column.Nombre_Campo);
+
+  assert.deepEqual(
+    ['ID_Usuario', 'ID_Rol', 'ID_Empresa', 'Activo'].every(header =>
+      columnNames(byName.CORE_USUARIO_ROL).includes(header)
+    ),
+    true
+  );
+  assert.deepEqual(
+    ['ID_Rol', 'ID_Modulo', 'ID_Empresa', 'Visible_Menu', 'Activo'].every(header =>
+      columnNames(byName.CORE_ROL_MODULO).includes(header)
+    ),
+    true
+  );
+  assert.equal(
+    byName.CORE_ROL_MODULO.columns.find(column => column.Nombre_Campo === 'ID_Modulo')
+      .Tabla_Referencia,
+    'CORE_MODULOS'
+  );
+  assert.equal(
+    byName.CORE_PERMISOS.columns.find(column => column.Nombre_Campo === 'ID_Modulo')
+      .Tabla_Referencia,
+    'CORE_MODULOS'
+  );
+  assert.deepEqual(
+    [
+      'ID_Permiso',
+      'ID_Rol',
+      'ID_Modulo',
+      'ID_Empresa',
+      'Puede_Ver',
+      'Puede_Crear',
+      'Puede_Editar',
+      'Puede_Eliminar',
+      'Puede_Aprobar',
+      'Puede_Exportar',
+      'Puede_Importar',
+      'Puede_Imprimir',
+      'Puede_Administrar',
+      'Activo'
+    ].every(header => columnNames(byName.CORE_PERMISOS).includes(header)),
+    true
+  );
+});
+
+test('commercial blueprint validation fails closed on tenant and reference violations', () => {
+  const missingTenant = buildCommercialBlueprint();
+  const clients = missingTenant.tables.find(table => table.physicalName === 'ERP_CLIENTES');
+  clients.columns = clients.columns.filter(column => column.Nombre_Campo !== 'ID_Empresa');
+
+  const tenantResult = validateCommercialBlueprint(missingTenant);
+  assert.equal(tenantResult.ok, false);
+  assert.deepEqual(tenantResult.errors, ['AERP_BP_MISSING_TENANT_COLUMN:ERP_CLIENTES']);
+
+  const invalidReference = buildCommercialBlueprint();
+  const products = invalidReference.tables.find(table => table.physicalName === 'ERP_PRODUCTOS');
+  const tenantColumn = products.columns.find(column => column.Nombre_Campo === 'ID_Empresa');
+  tenantColumn.Tabla_Referencia = 'EMPRESA_DESCONOCIDA';
+
+  const referenceResult = validateCommercialBlueprint(invalidReference);
+  assert.equal(referenceResult.ok, false);
+  assert.deepEqual(referenceResult.errors, [
+    'AERP_BP_INVALID_TENANT_COLUMN:ERP_PRODUCTOS',
+    'AERP_BP_UNRESOLVABLE_REFERENCE:ERP_PRODUCTOS.ID_Empresa'
+  ]);
+});
+
+test('commercial blueprint is customer-neutral and returns independent copies', () => {
+  const first = buildCommercialBlueprint();
+  first.tables[0].name = 'mutated';
+  first.tables[0].columns[0].Nombre_Mostrar = 'mutated';
+
+  const second = buildCommercialBlueprint();
+  const serialized = JSON.stringify(second);
+
+  assert.notEqual(second.tables[0].name, 'mutated');
+  assert.notEqual(second.tables[0].columns[0].Nombre_Mostrar, 'mutated');
+  assert.doesNotMatch(serialized, /@/);
+  assert.doesNotMatch(serialized, /gmail|alefadvertisingcorp|rquintana/i);
+  assert.deepEqual(validateCommercialBlueprint(null), {
+    ok: false,
+    errors: ['AERP_BP_INVALID_BLUEPRINT'],
+    summary: {
+      version: null,
+      tables: 0,
+      columns: 0,
+      tenantScopedTables: 0,
+      modules: 0
+    }
+  });
+
+  const hostile = {};
+  Object.defineProperty(hostile, 'version', {
+    get() {
+      throw new Error('sensitive implementation detail');
+    }
+  });
+  const hostileResult = validateCommercialBlueprint(hostile);
+  assert.equal(hostileResult.ok, false);
+  assert.deepEqual(hostileResult.errors, ['AERP_BP_INVALID_BLUEPRINT']);
+  assert.doesNotMatch(JSON.stringify(hostileResult), /sensitive implementation detail/);
 });

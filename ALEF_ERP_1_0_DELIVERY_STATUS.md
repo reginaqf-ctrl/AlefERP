@@ -1,10 +1,12 @@
 # Alef ERP 1.0 — Delivery Status
 
-**Fecha de corte:** 2026-09-17
+**Fecha de corte:** 2026-09-18
 
 **Rama evaluada:** `release/AlefERP-3.0.0-rc1`
 
 **Revisión evaluada:** `00657af7e7c9b6e94683c9b43b4c160fd5ef59c1`
+
+**Rama de implementación AERP-040:** `feature/AERP-040-commercial-blueprint`
 
 **Documento rector:** `Product Completion Plan.md`
 
@@ -24,17 +26,20 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 - Piloto aislado no productivo con resultado operativo satisfactorio.
 - Aislamiento de la hoja vinculada y OAuth de mínimo privilegio validados.
 - Caso demo comercial web publicado de forma privada.
+- Baseline AERP-040 del blueprint comercial implementado como `FrameworkSchema` puro,
+  versionado y neutral respecto del cliente: 17 tablas, 8 áreas funcionales y 16
+  tablas dependientes con tenant obligatorio.
 - Controles ejecutados sobre la revisión evaluada:
-  - pruebas canónicas: **242/242**, sin fallos ni omisiones;
-  - Globals Gate: **757 símbolos**, cero duplicados y cero construcciones dinámicas bloqueadas;
-  - Bundle Gate: **18/18** y manifiesto comercial válido;
+  - pruebas canónicas: **248/248**, sin fallos ni omisiones;
+  - Globals Gate: **773 símbolos**, cero duplicados y cero construcciones dinámicas bloqueadas;
+  - Bundle Gate: **18/18**, 38 scripts y 39 archivos en el artefacto;
   - ESLint: sin errores.
 
 ### En curso
 
 - Reconciliación del estado de entrega 1.0 contra evidencia posterior al documento QA
   inicial.
-- Definición del contrato de instalación/onboarding y del blueprint comercial MVP.
+- Integración del blueprint comercial MVP con el preflight y el instalador.
 - Mecanismo AppSheet aprobado: plantilla versionada y copiable; activo pendiente de
   creación y validación.
 - Conversión del framework validado en un producto instalable por un usuario no técnico.
@@ -43,8 +48,8 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 
 - El archivo `11_Installer.js` valida una instalación existente, pero no crea una
   instalación, empresa, administrador ni configuración inicial.
-- No existe en el repositorio un blueprint comercial versionado que materialice los
-  módulos MVP sin depender de metadata preparada manualmente en una hoja.
+- El baseline de datos del blueprint ya existe, pero todavía no incluye el manifiesto
+  completo de vistas, menús y dashboards ni está conectado al instalador.
 - `16_AppSheetGenerator.js` construye y valida un paquete AppSheet descriptivo, pero no
   aprovisiona ni configura una aplicación AppSheet real.
 - Los módulos comerciales MVP no disponen todavía de evidencia end-to-end completa de
@@ -67,7 +72,7 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 - Pedidos con edición, aprobación y estados.
 - Ventas y reportes básicos operativos.
 - Configuración de empresa, moneda, parámetros y seguridad.
-- Aprovisionamiento AppSheet o mecanismo de entrega equivalente aprobado.
+- Activo AppSheet versionado y procedimiento de copia/vinculación validado.
 - QA de instalación limpia, actualización, regresión, multiempresa, permisos y estados
   vacíos/inválidos.
 - Manuales, beta cerrada, decisión de producción y lanzamiento.
@@ -77,7 +82,7 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 | ID    | Bloqueo                                        | Criticidad             | Criterio de cierre                                                                                                      |
 | ----- | ---------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | RB-01 | Instalador inexistente                         | Crítica                | Una instalación limpia crea empresa, administrador y configuración sin intervención técnica.                            |
-| RB-02 | Blueprint comercial no versionado              | Crítica                | El repositorio contiene un blueprint metadata-driven reproducible para todos los módulos MVP.                           |
+| RB-02 | Blueprint comercial aún no integrado           | Crítica                | El baseline de datos se completa con vistas, menús y dashboards, y el instalador lo consume de forma reproducible.      |
 | RB-03 | Plantilla AppSheet no versionada ni validada   | Crítica                | La plantilla aprobada dispone de versión, hash, matriz de roles/vistas, procedimiento de copia y validación end-to-end. |
 | RB-04 | Módulos MVP sin aceptación end-to-end          | Crítica                | Cada módulo obligatorio supera CRUD, permisos, datos inválidos y flujo principal.                                       |
 | RB-05 | Onboarding y administración incompletos        | Crítica                | Un usuario no técnico termina la primera configuración y puede administrar usuarios, roles y permisos.                  |
@@ -90,8 +95,8 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 
 ## NEXT_ACTIONS
 
-1. Aprobar e implementar el contrato AERP-040 para instalador, onboarding y blueprint
-   comercial versionado, preservando el núcleo estable y el principio Default DENY.
+1. Integrar el blueprint AERP-040 con el preflight y el instalador, preservando el
+   núcleo estable y el principio Default DENY.
 2. Crear la matriz de cobertura de los módulos MVP y cerrar primero Administración,
    Productos, Inventario, Pedidos y Ventas con pruebas de permisos y multiempresa.
 3. Construir, versionar y validar la plantilla AppSheet aprobada; demostrar una
@@ -113,12 +118,12 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 
 ## Evidencia de esta revisión
 
-- `npm test`: PASS — 242/242.
-- `npm run qa:globals`: PASS — 757 símbolos, 0 duplicados, 0 violaciones dinámicas.
-- `npm run test:bundle`: PASS — 18/18; 37 scripts y 38 archivos en el artefacto.
+- `npm test`: PASS — 248/248.
+- `npm run qa:globals`: PASS — 773 símbolos, 0 duplicados, 0 violaciones dinámicas.
+- `npm run test:bundle`: PASS — 18/18; 38 scripts y 39 archivos en el artefacto.
 - `npm run lint`: PASS.
 - `npm run format:check`: FAIL — 19 archivos fuera del formato aprobado.
 - `npm audit`: seis alertas altas, todas dentro de la cadena de herramientas de
   desarrollo; no incluidas en el bundle Apps Script.
-- Inspección de código: el instalador actual es únicamente un validador y no existe
-  integración de aprovisionamiento AppSheet.
+- Inspección de código: el instalador actual sigue siendo únicamente un validador; el
+  blueprint aún no escribe hojas ni integra el activo AppSheet aprobado.
