@@ -229,6 +229,18 @@
       "role": "production",
       "classification": "productive",
       "justification": "Enterprise metadata builder."
+    },
+    {
+      "path": "AERP-040_CommercialBlueprint.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Versioned Alef ERP 1.0 commercial metadata blueprint."
+    },
+    {
+      "path": "AERP-040_CommercialPresentationManifest.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Declarative Alef ERP 1.0 commercial views, navigation and dashboards."
     }
   ],
   "excludedFiles": [
