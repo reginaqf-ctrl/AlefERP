@@ -17,6 +17,7 @@ const validateCommercialPresentationManifest =
   globalThis.aerpValidateCommercialPresentationManifest;
 const buildCommercialInstallerPlan = globalThis.aerpBuildCommercialInstallerPlan;
 const installCheck = globalThis.aerpInstallCheck;
+const previewCommercialInstallation = globalThis.aerpPreviewCommercialInstallation;
 
 function createColumn(overrides = {}) {
   return {
@@ -1641,5 +1642,211 @@ test('installation preflight consumes the commercial plan and exposes a sanitize
     globalThis.AERP_SHEETS = previousSheets;
     globalThis.Logger = previousLogger;
     globalThis.aerpGetSheet = previousGetSheet;
+  }
+});
+
+test('commercial installation preview requires a distinct bound spreadsheet and does not write', () => {
+  const previous = {
+    version: globalThis.AERP_VERSION,
+    sheets: globalThis.AERP_SHEETS,
+    logger: globalThis.Logger,
+    getSheet: globalThis.aerpGetSheet,
+    getSpreadsheet: globalThis.aerpGetSpreadsheet,
+    rowToObject: globalThis.aerpRowToObject
+  };
+  const sourceSpreadsheetId = 'SOURCE_SPREADSHEET_1234567890';
+  const targetSpreadsheetId = 'ISOLATED_SPREADSHEET_12345678';
+  const requiredHeaders = {
+    CORE_TABLAS: [
+      'ID_Tabla',
+      'Codigo',
+      'Nombre',
+      'Entidad',
+      'Modulo',
+      'Categoria',
+      'Tipo_Tabla',
+      'Origen_Datos',
+      'Tabla_Fisica',
+      'Activo'
+    ],
+    CORE_COLUMNAS: [
+      'ID_Columna',
+      'Tabla',
+      'Nombre_Campo',
+      'Nombre_Mostrar',
+      'Tipo_Dato',
+      'Es_Key',
+      'Es_Label',
+      'Es_Requerido',
+      'Permite_Nulos',
+      'Valor_Inicial',
+      'Formula_App',
+      'Tabla_Referencia',
+      'Orden',
+      'Activo',
+      'Estado',
+      'Visible',
+      'Editable',
+      'Es_Ref',
+      'Es_Virtual',
+      'Tipo_Control'
+    ],
+    GEN_REGLAS: [
+      'ID_Regla',
+      'Version',
+      'Prioridad',
+      'Nivel',
+      'Activo',
+      'Nombre_Regla',
+      'Patron',
+      'Tipo_Patron',
+      'Categoria',
+      'Categoria_App',
+      'Motor',
+      'Aplica_A',
+      'Tipo_Dato',
+      'Tipo_Control',
+      'Requerido',
+      'Permite_Nulos',
+      'Es_Key',
+      'Es_Label',
+      'Es_Ref',
+      'Visible',
+      'Editable',
+      'ID_TablaReferencia',
+      'Formula',
+      'Descripcion'
+    ],
+    GEN_ACCIONES: [
+      'ID_Accion',
+      'Version',
+      'Activo',
+      'ID_Regla',
+      'Orden',
+      'Nombre_Accion',
+      'Tipo_Accion',
+      'Campo_Destino',
+      'Valor',
+      'Condicion',
+      'Descripcion'
+    ],
+    CAT_ESTADOS: ['ID_Estado', 'Codigo', 'Nombre', 'Descripcion', 'Activo']
+  };
+  const writes = [];
+  const makeSheet = (headers, rows = []) => ({
+    getDataRange() {
+      return { getValues: () => [headers, ...rows] };
+    },
+    getLastRow: () => 1 + rows.length,
+    getLastColumn: () => headers.length,
+    getRange() {
+      return { getValues: () => [headers] };
+    },
+    setValues: () => writes.push('setValues'),
+    appendRow: () => writes.push('appendRow')
+  });
+  const sheets = Object.fromEntries(
+    Object.entries(requiredHeaders).map(([name, headers]) => [name, makeSheet(headers)])
+  );
+  const spreadsheet = {
+    getId: () => targetSpreadsheetId,
+    getSheetByName: name => sheets[name] || null,
+    insertSheet: name => writes.push(name)
+  };
+  const request = { sourceSpreadsheetId, targetSpreadsheetId };
+
+  try {
+    globalThis.AERP_VERSION = '3.0.0';
+    globalThis.AERP_SHEETS = Object.fromEntries(
+      Object.keys(requiredHeaders).map(name => [name, name])
+    );
+    globalThis.Logger = { log() {} };
+    globalThis.aerpGetSpreadsheet = () => spreadsheet;
+    globalThis.aerpRowToObject = (headers, values) =>
+      Object.fromEntries(headers.map((header, index) => [header, values[index]]));
+    globalThis.aerpGetSheet = name => {
+      if (!sheets[name]) throw new Error('MISSING_SHEET');
+      return sheets[name];
+    };
+
+    const ready = previewCommercialInstallation(request);
+    assert.equal(ready.ok, true, JSON.stringify(ready.errors));
+    assert.equal(ready.status, 'READY_FOR_STRUCTURE');
+    assert.equal(ready.sheets.length, 17);
+    assert.ok(ready.sheets.every(sheet => sheet.action === 'CREATE'));
+
+    const companyTable = buildCommercialBlueprint().tables.find(
+      table => table.physicalName === 'CORE_EMPRESAS'
+    );
+    sheets.CORE_EMPRESAS = makeSheet(
+      companyTable.columns.map(column => column.Nombre_Campo),
+      [companyTable.columns.map(() => '')]
+    );
+    const partial = previewCommercialInstallation(request);
+    assert.equal(partial.ok, true);
+    assert.deepEqual(
+      partial.sheets.find(sheet => sheet.name === 'CORE_EMPRESAS'),
+      {
+        name: 'CORE_EMPRESAS',
+        action: 'KEEP',
+        dataRows: 1
+      }
+    );
+
+    const same = previewCommercialInstallation({
+      sourceSpreadsheetId: targetSpreadsheetId,
+      targetSpreadsheetId
+    });
+    assert.deepEqual(same.errors, ['AERP_INSTALL_PREVIEW_TARGET_NOT_ISOLATED']);
+
+    const mismatch = previewCommercialInstallation({
+      sourceSpreadsheetId,
+      targetSpreadsheetId: 'ANOTHER_SPREADSHEET_1234567890'
+    });
+    assert.deepEqual(mismatch.errors, ['AERP_INSTALL_PREVIEW_TARGET_MISMATCH']);
+
+    const invalid = previewCommercialInstallation(null);
+    assert.deepEqual(invalid.errors, ['AERP_INSTALL_PREVIEW_INVALID_REQUEST']);
+
+    const rulesSheet = sheets.GEN_REGLAS;
+    delete sheets.GEN_REGLAS;
+    const incompleteBaseline = previewCommercialInstallation(request);
+    assert.deepEqual(incompleteBaseline.errors, ['AERP_INSTALL_PREVIEW_BASELINE_INVALID']);
+    sheets.GEN_REGLAS = rulesSheet;
+
+    sheets.CORE_EMPRESAS = makeSheet(['INCORRECT_HEADER']);
+    const conflict = previewCommercialInstallation(request);
+    assert.equal(conflict.ok, false);
+    assert.equal(conflict.status, 'INCOMPATIBLE');
+    assert.ok(conflict.errors.includes('AERP_INSTALL_PREVIEW_SCHEMA_CONFLICT:CORE_EMPRESAS'));
+
+    delete sheets.CORE_EMPRESAS;
+    sheets.CORE_TABLAS = makeSheet(requiredHeaders.CORE_TABLAS, [
+      [
+        'WRONG_ID',
+        'EMPRESAS',
+        'Empresas',
+        'Empresa',
+        'ADMINISTRACION',
+        '',
+        '',
+        '',
+        'CORE_EMPRESAS',
+        true
+      ]
+    ]);
+    const registryConflict = previewCommercialInstallation(request);
+    assert.equal(registryConflict.ok, false);
+    assert.ok(
+      registryConflict.errors.includes('AERP_INSTALL_PREVIEW_TABLE_REGISTRY_CONFLICT:CORE_EMPRESAS')
+    );
+    assert.deepEqual(writes, []);
+  } finally {
+    globalThis.AERP_VERSION = previous.version;
+    globalThis.AERP_SHEETS = previous.sheets;
+    globalThis.Logger = previous.logger;
+    globalThis.aerpGetSheet = previous.getSheet;
+    globalThis.aerpGetSpreadsheet = previous.getSpreadsheet;
+    globalThis.aerpRowToObject = previous.rowToObject;
   }
 });

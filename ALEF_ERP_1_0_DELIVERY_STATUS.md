@@ -1,6 +1,6 @@
 # Alef ERP 1.0 — Delivery Status
 
-**Fecha de corte:** 2026-09-18
+**Fecha de corte:** 2026-09-19
 
 **Rama evaluada:** `release/AlefERP-3.0.0-rc1`
 
@@ -35,11 +35,14 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
   visibilidad oculta por defecto y sin capacidad de conceder acceso.
 - Integración AERP-040 con el preflight del instalador: plan puro, determinista e
   inmutable que consume el blueprint y el manifiesto validados sin realizar escrituras.
+- Preflight adicional de copia aislada: comprueba origen distinto, identidad de la
+  hoja vinculada, instalación base, cabeceras de las 17 tablas y colisiones en los
+  registros de metadata; permanece estrictamente de solo lectura.
 - **RB-02 cerrado:** el instalador consume de forma reproducible las 17 tablas, 17
   vistas, 8 menús, 20 elementos de navegación y 3 dashboards aprobados.
 - Controles ejecutados sobre la revisión evaluada:
-  - pruebas canónicas: **263/263**, sin fallos ni omisiones;
-  - Globals Gate: **809 símbolos**, cero duplicados y cero construcciones dinámicas bloqueadas;
+  - pruebas canónicas: **264/264**, sin fallos ni omisiones;
+  - Globals Gate: **811 símbolos**, cero duplicados y cero construcciones dinámicas bloqueadas;
   - Bundle Gate: **18/18**, 39 scripts y 40 archivos en el artefacto;
   - ESLint: sin errores.
 
@@ -53,8 +56,9 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 
 ### Bloqueado
 
-- El archivo `11_Installer.js` valida una instalación existente, pero no crea una
-  instalación, empresa, administrador ni configuración inicial.
+- El archivo `11_Installer.js` valida una instalación existente y anticipa
+  conflictos de una copia aislada, pero todavía no crea una instalación, empresa,
+  administrador ni configuración inicial.
 - `16_AppSheetGenerator.js` construye y valida un paquete AppSheet descriptivo, pero no
   aprovisiona ni configura una aplicación AppSheet real.
 - Los módulos comerciales MVP no disponen todavía de evidencia end-to-end completa de
@@ -122,13 +126,14 @@ reemplaza las evidencias históricas ni autoriza producción o acceso de cliente
 
 ## Evidencia de esta revisión
 
-- `npm test`: PASS — 263/263.
-- `npm run qa:globals`: PASS — 809 símbolos, 0 duplicados, 0 violaciones dinámicas.
+- `npm test`: PASS — 264/264.
+- `npm run qa:globals`: PASS — 811 símbolos, 0 duplicados, 0 violaciones dinámicas.
 - `npm run test:bundle`: PASS — 18/18; 39 scripts y 40 archivos en el artefacto.
 - `npm run lint`: PASS.
 - `npm run format:check`: FAIL — 18 archivos heredados fuera del formato aprobado.
 - `npm audit`: seis alertas altas, todas dentro de la cadena de herramientas de
   desarrollo; no incluidas en el bundle Apps Script.
 - Inspección de código: el preflight del instalador ya consume y valida el blueprint y
-  su manifiesto de presentación sin conceder permisos ni escribir hojas. Sigue pendiente
-  la creación idempotente de la instalación y la vinculación del activo AppSheet aprobado.
+  su manifiesto de presentación, comprueba la copia aislada y no concede permisos
+  ni escribe hojas. Sigue pendiente la creación idempotente de la instalación y la
+  vinculación del activo AppSheet aprobado.
