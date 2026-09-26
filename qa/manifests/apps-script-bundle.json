@@ -47,7 +47,8 @@
     "AERP-036_AuthorizationEngine.js",
     "AERP-038A_MetadataBuilderEnterprise.js",
     "AERP-040_CommercialBlueprint.js",
-    "AERP-040_CommercialPresentationManifest.js"
+    "AERP-040_CommercialPresentationManifest.js",
+    "AERP-041_IsolatedInstallerEngine.js"
   ],
   "excludedJavaScriptFiles": [
     "09_Tests.js",
@@ -57,6 +58,7 @@
     "AERP-038B_SingleMetadataBuildConsumerIntegration.test.js",
     "AERP-038B_SingleMetadataBuildOperationalIntegration.test.js",
     "AERP-038B_SingleMetadataBuildPipelineIntegration.test.js",
+    "AERP-041_IsolatedInstallerEngine.test.js",
     "eslint.config.js"
   ],
   "requiredEntrypoints": [
@@ -64,7 +66,8 @@
     "aerpRunBuildPipeline",
     "aerpRunBuildWorkflow",
     "aerpAuthorize",
-    "aerpAuthorizeEnterprise"
+    "aerpAuthorizeEnterprise",
+    "aerpCreateIsolatedInstallerEngine"
   ],
   "embeddedTestEntrypoints": {
     "prefixes": ["test", "runTest"],

@@ -241,6 +241,12 @@
       "role": "production",
       "classification": "productive",
       "justification": "Declarative Alef ERP 1.0 commercial views, navigation and dashboards."
+    },
+    {
+      "path": "AERP-041_IsolatedInstallerEngine.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Pure fail-closed isolated installation engine."
     }
   ],
   "excludedFiles": [
@@ -265,9 +271,13 @@
       "path": "AERP-038B_SingleMetadataBuildPipelineIntegration.test.js",
       "reason": "Canonical Node test suite."
     },
+    {
+      "path": "AERP-041_IsolatedInstallerEngine.test.js",
+      "reason": "Canonical Node test suite."
+    },
     { "path": "eslint.config.js", "reason": "Node-only ESLint configuration." }
   ],
-  "publicEntrypoints": ["aerpAuthorize"],
+  "publicEntrypoints": ["aerpAuthorize", "aerpCreateIsolatedInstallerEngine"],
   "policy": {
     "exactCollision": "error",
     "equivalentDuplicate": "error",

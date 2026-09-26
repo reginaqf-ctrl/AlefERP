@@ -178,7 +178,7 @@ export async function loadTestManifest(repoRoot, manifestPath) {
     throw new Error('reconciledBaseline must be non-negative and non-contractual');
   }
   const suites = validateSuiteList(repoRoot, manifest.suites, 'declared suites');
-  if (suites.length !== 6) throw new Error('exactly six declared suites are required');
+  if (suites.length !== 7) throw new Error('exactly seven declared suites are required');
   if (
     !manifest.reconciledBaseline.perSuite ||
     typeof manifest.reconciledBaseline.perSuite !== 'object' ||

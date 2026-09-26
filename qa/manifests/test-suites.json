@@ -8,7 +8,7 @@
     "enforced": false
   },
   "reconciledBaseline": {
-    "total": 264,
+    "total": 295,
     "contractualThreshold": false,
     "perSuite": {
       "AERP-036_AuthorizationEngine.test.js": 20,
@@ -16,7 +16,8 @@
       "AERP-038A_MetadataBuilderEnterpriseWrapper.test.js": 66,
       "AERP-038B_SingleMetadataBuildConsumerIntegration.test.js": 51,
       "AERP-038B_SingleMetadataBuildPipelineIntegration.test.js": 34,
-      "AERP-038B_SingleMetadataBuildOperationalIntegration.test.js": 31
+      "AERP-038B_SingleMetadataBuildOperationalIntegration.test.js": 31,
+      "AERP-041_IsolatedInstallerEngine.test.js": 31
     }
   },
   "suites": [
@@ -25,6 +26,7 @@
     "AERP-038A_MetadataBuilderEnterpriseWrapper.test.js",
     "AERP-038B_SingleMetadataBuildConsumerIntegration.test.js",
     "AERP-038B_SingleMetadataBuildPipelineIntegration.test.js",
-    "AERP-038B_SingleMetadataBuildOperationalIntegration.test.js"
+    "AERP-038B_SingleMetadataBuildOperationalIntegration.test.js",
+    "AERP-041_IsolatedInstallerEngine.test.js"
   ]
 }
