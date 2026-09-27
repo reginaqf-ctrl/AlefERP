@@ -247,6 +247,12 @@
       "role": "production",
       "classification": "productive",
       "justification": "Pure fail-closed isolated installation engine."
+    },
+    {
+      "path": "AERP-041_InstallerIntegration.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Fail-closed coordinator for confirmation, completion and adapter binding."
     }
   ],
   "excludedFiles": [
@@ -275,9 +281,18 @@
       "path": "AERP-041_IsolatedInstallerEngine.test.js",
       "reason": "Canonical Node test suite."
     },
+    {
+      "path": "AERP-041_InstallerIntegration.test.js",
+      "reason": "Canonical Node test suite."
+    },
     { "path": "eslint.config.js", "reason": "Node-only ESLint configuration." }
   ],
-  "publicEntrypoints": ["aerpAuthorize", "aerpCreateIsolatedInstallerEngine"],
+  "publicEntrypoints": [
+    "aerpAuthorize",
+    "aerpCreateIsolatedInstallerEngine",
+    "aerpCreateIsolatedInstallerIntegration",
+    "aerpCreateCommercialInstallerCoordinator"
+  ],
   "policy": {
     "exactCollision": "error",
     "equivalentDuplicate": "error",

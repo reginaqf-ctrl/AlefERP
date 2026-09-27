@@ -92,11 +92,11 @@ test('transient Windows filesystem contention is retried without hiding permanen
   assert.equal(permanentAttempts, 1);
 });
 
-test('positive manifest defines 40 ordered scripts and nine explicit exclusions', async () => {
+test('positive manifest defines 41 ordered scripts and ten explicit exclusions', async () => {
   const { manifest } = await loadBundleManifest(REPOSITORY_ROOT);
   assert.equal(manifest.schemaVersion, '1.1.0');
-  assert.equal(manifest.sourceFiles.length, 40);
-  assert.equal(manifest.excludedJavaScriptFiles.length, 9);
+  assert.equal(manifest.sourceFiles.length, 41);
+  assert.equal(manifest.excludedJavaScriptFiles.length, 10);
   assert.equal(manifest.sourceFiles.includes('09_Tests.js'), false);
   assert.equal(manifest.excludedJavaScriptFiles.includes('09_Tests.js'), true);
   assert.equal(
@@ -112,9 +112,9 @@ test('positive manifest defines 40 ordered scripts and nine explicit exclusions'
 test('repository inventory and positive clasp ignore agree exactly', async () => {
   const { manifest } = await loadBundleManifest(REPOSITORY_ROOT);
   const inventory = await validateRepositoryInventory(REPOSITORY_ROOT, manifest);
-  assert.equal(inventory.discoveredJavaScript.length, 49);
+  assert.equal(inventory.discoveredJavaScript.length, 51);
   assert.deepEqual(inventory.expectedIgnoreLines.slice(0, 2), ['**/**', '!appsscript.json']);
-  assert.equal(inventory.expectedIgnoreLines.length, 42);
+  assert.equal(inventory.expectedIgnoreLines.length, 43);
 });
 
 test('build creates the exact isolated artifact and excludes all non-production JavaScript', async () => {
@@ -123,9 +123,9 @@ test('build creates the exact isolated artifact and excludes all non-production 
   assert.equal(evidence.schemaVersion, '1.2.0');
   assert.equal(evidence.result.ok, true);
   assert.equal(evidence.result.code, 'BUNDLE_VALID');
-  assert.equal(evidence.inventory.includedJavaScript, 40);
-  assert.equal(evidence.inventory.excludedJavaScript, 9);
-  assert.equal(evidence.artifact.files.length, 41);
+  assert.equal(evidence.inventory.includedJavaScript, 41);
+  assert.equal(evidence.inventory.excludedJavaScript, 10);
+  assert.equal(evidence.artifact.files.length, 42);
   assert.equal(evidence.runtime.compiled, true);
   assert.equal(evidence.runtime.loaded, true);
   assert.deepEqual(evidence.authorization, {

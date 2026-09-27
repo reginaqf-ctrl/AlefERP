@@ -510,8 +510,30 @@ function testInstallerErrores() {
   Logger.log(JSON.stringify(result.warnings, null, 2));
 }
 
+/**
+ * Wires the approved AERP-040 plan into the AERP-041 integration coordinator.
+ * Runtime identity, confirmation, authorization and persistence remain injected
+ * so a missing production dependency fails closed instead of granting access.
+ */
+function aerpCreateCommercialInstallerCoordinator(dependencies) {
+  const runtime = dependencies && typeof dependencies === 'object' ? dependencies : {};
+  return aerpCreateIsolatedInstallerIntegration({
+    buildCommercialPlan: aerpBuildCommercialInstallerPlan,
+    createEngine: aerpCreateIsolatedInstallerEngine,
+    validateBlueprint: aerpValidateCommercialBlueprint,
+    validatePresentation: aerpValidateCommercialPresentationManifest,
+    validateSecurity: runtime.validateSecurity,
+    verifyIdentity: runtime.verifyIdentity,
+    authorize: runtime.authorize,
+    verifyConfirmation: runtime.verifyConfirmation,
+    readSnapshot: runtime.readSnapshot,
+    createAdapter: runtime.createAdapter
+  });
+}
+
 if (typeof globalThis !== 'undefined') {
   globalThis.aerpBuildCommercialInstallerPlan = aerpBuildCommercialInstallerPlan;
   globalThis.aerpPreviewCommercialInstallation = aerpPreviewCommercialInstallation;
   globalThis.aerpInstallCheck = aerpInstallCheck;
+  globalThis.aerpCreateCommercialInstallerCoordinator = aerpCreateCommercialInstallerCoordinator;
 }
