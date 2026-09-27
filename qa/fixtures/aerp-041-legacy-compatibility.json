@@ -1,0 +1,183 @@
+{
+  "schemaVersion": "2.1.0",
+  "metadata": {
+    "document": "AERP-041B_LEGACY_COMPATIBILITY_MATRIX",
+    "analysisDate": "2026-09-27T00:00:00.000Z",
+    "sourceSha256": "8EABE245F1427D88CADE696105DDC906F05EFA2FBFDCE68E2BABA0EA29FF04AE",
+    "sourceSheetCount": 67,
+    "blueprintVersion": "1.0.0",
+    "baseCommit": "8ac0a75"
+  },
+  "summary": {
+    "expectedTables": 17,
+    "expectedCoreTables": 8,
+    "expectedErpTables": 9,
+    "existingTables": 7,
+    "missingTables": 10,
+    "schemaConflicts": 7,
+    "registryConflicts": 7,
+    "significantRowsInExistingBlueprintTables": 17,
+    "automaticMigrationCandidates": 0
+  },
+  "tables": [
+    {
+      "name": "CORE_EMPRESAS",
+      "exists": true,
+      "significantRows": 0,
+      "missingHeaders": ["Nombre", "Moneda"],
+      "registry": { "actual": "TAB0009", "expected": "AERP1_TABLE_CORE_EMPRESAS" },
+      "disposition": "STRUCTURE_ONLY_NO_ROWS"
+    },
+    {
+      "name": "CORE_USUARIOS",
+      "exists": true,
+      "significantRows": 0,
+      "missingHeaders": ["ID_Empresa"],
+      "registry": { "actual": "TAB0010", "expected": "AERP1_TABLE_CORE_USUARIOS" },
+      "disposition": "STRUCTURE_ONLY_NO_ROWS"
+    },
+    {
+      "name": "CORE_ROLES",
+      "exists": true,
+      "significantRows": 0,
+      "missingHeaders": ["ID_Empresa", "Codigo", "Nombre"],
+      "registry": { "actual": "TAB0011", "expected": "AERP1_TABLE_CORE_ROLES" },
+      "disposition": "STRUCTURE_ONLY_NO_ROWS"
+    },
+    {
+      "name": "CORE_MODULOS",
+      "exists": true,
+      "significantRows": 14,
+      "missingHeaders": ["ID_Empresa", "Orden"],
+      "registry": { "actual": "TAB0012", "expected": "AERP1_TABLE_CORE_MODULOS" },
+      "disposition": "BACKUP_ONLY_REBUILD_FROM_BLUEPRINT"
+    },
+    {
+      "name": "CORE_USUARIO_ROL",
+      "exists": true,
+      "significantRows": 1,
+      "missingHeaders": ["ID_Usuario_Rol", "ID_Empresa", "ID_Usuario", "ID_Rol"],
+      "registry": { "actual": "TAB0014", "expected": "AERP1_TABLE_CORE_USUARIO_ROL" },
+      "disposition": "BACKUP_ONLY_ORPHANED_SECURITY_RELATION"
+    },
+    {
+      "name": "CORE_ROL_MODULO",
+      "exists": true,
+      "significantRows": 1,
+      "missingHeaders": ["ID_Rol_Modulo", "ID_Rol", "ID_Modulo"],
+      "registry": { "actual": "TAB0015", "expected": "AERP1_TABLE_CORE_ROL_MODULO" },
+      "disposition": "BACKUP_ONLY_ORPHANED_SECURITY_RELATION"
+    },
+    {
+      "name": "CORE_PERMISOS",
+      "exists": true,
+      "significantRows": 1,
+      "missingHeaders": ["ID_Empresa", "ID_Rol", "ID_Modulo"],
+      "registry": { "actual": "TAB0013", "expected": "AERP1_TABLE_CORE_PERMISOS" },
+      "disposition": "BACKUP_ONLY_UNTRUSTED_ALLOW_RULE"
+    },
+    {
+      "name": "CORE_CONFIGURACION",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    },
+    {
+      "name": "ERP_CLIENTES",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    },
+    {
+      "name": "ERP_PROVEEDORES",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    },
+    {
+      "name": "ERP_PRODUCTOS",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    },
+    {
+      "name": "ERP_INVENTARIO",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    },
+    {
+      "name": "ERP_MOVIMIENTOS_INVENTARIO",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    },
+    {
+      "name": "ERP_PEDIDOS",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    },
+    {
+      "name": "ERP_PEDIDO_DETALLE",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    },
+    {
+      "name": "ERP_VENTAS",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    },
+    {
+      "name": "ERP_VENTA_DETALLE",
+      "exists": false,
+      "significantRows": 0,
+      "missingHeaders": [],
+      "registry": null,
+      "disposition": "CREATE_FROM_BLUEPRINT"
+    }
+  ],
+  "security": {
+    "legacyPermissionContainsAllowFlags": true,
+    "securityRelationsHaveResolvableParents": false,
+    "absenceOfDataIsAuthorization": false,
+    "defaultDecision": "DENY",
+    "denyPrecedence": true,
+    "automaticSecurityMigrationAllowed": false
+  },
+  "migration": {
+    "recommendation": "CLEAN_TEMPLATE_WITH_EXPLICIT_SELECTIVE_MIGRATION_LATER",
+    "preserveApprovedBlueprint": true,
+    "migrateFrameworkMetadata": false,
+    "migrateLegacySecurityRows": false,
+    "ignoreEmptyFormattedRows": true,
+    "retainLegacyRowsAsBackup": true
+  },
+  "rollback": {
+    "strategy": "QUARANTINE_AND_RESUME",
+    "destructiveTruncateAllowed": false,
+    "failedState": "INCOMPLETE",
+    "preserveCreatedResources": true,
+    "normalAccessAllowedWhileIncomplete": false
+  }
+}
