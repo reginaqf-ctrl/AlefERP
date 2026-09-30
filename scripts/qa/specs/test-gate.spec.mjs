@@ -1075,15 +1075,15 @@ test('parseReporterResult rejects missing and duplicate bounded results', () => 
   );
 });
 
-test('aggregates exactly 20 + 40 + 66 + 51 + 34 + 31 = 242', () => {
+test('aggregates all nine declared suites to the reconciled total', () => {
   const results = SUITES.map(([suitePath, total]) => suiteResult(suitePath, total));
   const counts = aggregateSuiteResults(
     SUITES.map(([suitePath]) => suitePath),
     results,
     baseline()
   );
-  assert.equal(counts.total, 20 + 40 + 66 + 51 + 34 + 31);
-  assert.equal(counts.total, 242);
+  assert.equal(counts.total, 20 + 62 + 66 + 51 + 34 + 31 + 31 + 14 + 15);
+  assert.equal(counts.total, 324);
 });
 
 test('aggregation rejects missing, duplicate, incomplete, incompatible, and inconsistent results', () => {

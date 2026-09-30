@@ -253,10 +253,19 @@
       "role": "production",
       "classification": "productive",
       "justification": "Fail-closed coordinator for confirmation, completion and adapter binding."
+    },
+    {
+      "path": "AERP-041_AppsScriptRuntimeAdapter.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Durable isolated Apps Script installer with real metadata authorization."
     }
   ],
   "excludedFiles": [
-    { "path": "AERP-036_AuthorizationEngine.test.js", "reason": "Canonical Node test suite." },
+    {
+      "path": "AERP-036_AuthorizationEngine.test.js",
+      "reason": "Canonical Node test suite."
+    },
     {
       "path": "AERP-038A_MetadataBuilderEnterprise.test.js",
       "reason": "Canonical Node test suite."
@@ -285,13 +294,21 @@
       "path": "AERP-041_InstallerIntegration.test.js",
       "reason": "Canonical Node test suite."
     },
-    { "path": "eslint.config.js", "reason": "Node-only ESLint configuration." }
+    {
+      "path": "eslint.config.js",
+      "reason": "Node-only ESLint configuration."
+    },
+    {
+      "path": "AERP-041_AppsScriptRuntimeAdapter.test.js",
+      "reason": "Canonical Node test suite."
+    }
   ],
   "publicEntrypoints": [
     "aerpAuthorize",
     "aerpCreateIsolatedInstallerEngine",
     "aerpCreateIsolatedInstallerIntegration",
-    "aerpCreateCommercialInstallerCoordinator"
+    "aerpCreateCommercialInstallerCoordinator",
+    "aerpCreateAppsScriptInstallerRuntime"
   ],
   "policy": {
     "exactCollision": "error",
