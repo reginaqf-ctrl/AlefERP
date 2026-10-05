@@ -255,6 +255,12 @@
       "justification": "Fail-closed coordinator for confirmation, completion and adapter binding."
     },
     {
+      "path": "AERP-041_SecureBootstrap.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "One-time OIDC bootstrap and document-scoped installation confirmation."
+    },
+    {
       "path": "AERP-041_AppsScriptRuntimeAdapter.js",
       "role": "production",
       "classification": "productive",
@@ -308,6 +314,8 @@
     "aerpCreateIsolatedInstallerEngine",
     "aerpCreateIsolatedInstallerIntegration",
     "aerpCreateCommercialInstallerCoordinator",
+    "aerpCreateAppsScriptSecureBootstrap",
+    "aerpCreateSecureAppsScriptInstaller",
     "aerpCreateAppsScriptInstallerRuntime"
   ],
   "policy": {

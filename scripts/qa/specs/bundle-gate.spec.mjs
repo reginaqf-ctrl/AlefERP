@@ -92,10 +92,10 @@ test('transient Windows filesystem contention is retried without hiding permanen
   assert.equal(permanentAttempts, 1);
 });
 
-test('positive manifest defines 42 ordered scripts and eleven explicit exclusions', async () => {
+test('positive manifest defines 43 ordered scripts and eleven explicit exclusions', async () => {
   const { manifest } = await loadBundleManifest(REPOSITORY_ROOT);
   assert.equal(manifest.schemaVersion, '1.1.0');
-  assert.equal(manifest.sourceFiles.length, 42);
+  assert.equal(manifest.sourceFiles.length, 43);
   assert.equal(manifest.excludedJavaScriptFiles.length, 11);
   assert.equal(manifest.sourceFiles.includes('09_Tests.js'), false);
   assert.equal(manifest.excludedJavaScriptFiles.includes('09_Tests.js'), true);
@@ -112,9 +112,9 @@ test('positive manifest defines 42 ordered scripts and eleven explicit exclusion
 test('repository inventory and positive clasp ignore agree exactly', async () => {
   const { manifest } = await loadBundleManifest(REPOSITORY_ROOT);
   const inventory = await validateRepositoryInventory(REPOSITORY_ROOT, manifest);
-  assert.equal(inventory.discoveredJavaScript.length, 53);
+  assert.equal(inventory.discoveredJavaScript.length, 54);
   assert.deepEqual(inventory.expectedIgnoreLines.slice(0, 2), ['**/**', '!appsscript.json']);
-  assert.equal(inventory.expectedIgnoreLines.length, 44);
+  assert.equal(inventory.expectedIgnoreLines.length, 45);
 });
 
 test('build creates the exact isolated artifact and excludes all non-production JavaScript', async () => {
@@ -123,15 +123,17 @@ test('build creates the exact isolated artifact and excludes all non-production 
   assert.equal(evidence.schemaVersion, '1.2.0');
   assert.equal(evidence.result.ok, true);
   assert.equal(evidence.result.code, 'BUNDLE_VALID');
-  assert.equal(evidence.inventory.includedJavaScript, 42);
+  assert.equal(evidence.inventory.includedJavaScript, 43);
   assert.equal(evidence.inventory.excludedJavaScript, 11);
-  assert.equal(evidence.artifact.files.length, 43);
+  assert.equal(evidence.artifact.files.length, 44);
   assert.equal(evidence.runtime.compiled, true);
   assert.equal(evidence.runtime.loaded, true);
   assert.deepEqual(evidence.authorization, {
     oauthScopes: [
+      'openid',
       'https://www.googleapis.com/auth/script.container.ui',
-      'https://www.googleapis.com/auth/spreadsheets.currentonly'
+      'https://www.googleapis.com/auth/spreadsheets.currentonly',
+      'https://www.googleapis.com/auth/userinfo.email'
     ],
     spreadsheetAccess: 'CURRENT_DOCUMENT_ONLY',
     driveAccess: false
@@ -366,8 +368,10 @@ test('Apps Script manifest is closed and uses only current-document OAuth scopes
   const appsScriptPath = path.join(root, manifest.manifestFile);
   const appsScriptManifest = JSON.parse(await readFile(appsScriptPath, 'utf8'));
   assert.deepEqual(appsScriptManifest.oauthScopes, [
+    'openid',
     'https://www.googleapis.com/auth/script.container.ui',
-    'https://www.googleapis.com/auth/spreadsheets.currentonly'
+    'https://www.googleapis.com/auth/spreadsheets.currentonly',
+    'https://www.googleapis.com/auth/userinfo.email'
   ]);
 
   appsScriptManifest.runtimeVersion = 'DEPRECATED_RUNTIME';
@@ -380,7 +384,7 @@ test('Apps Script manifest is closed and uses only current-document OAuth scopes
   const broadSheets = await createFixture();
   const broadSheetsPath = path.join(broadSheets.root, broadSheets.manifest.manifestFile);
   const broadSheetsManifest = JSON.parse(await readFile(broadSheetsPath, 'utf8'));
-  broadSheetsManifest.oauthScopes[1] = 'https://www.googleapis.com/auth/spreadsheets';
+  broadSheetsManifest.oauthScopes[2] = 'https://www.googleapis.com/auth/spreadsheets';
   await writeFile(broadSheetsPath, `${JSON.stringify(broadSheetsManifest, null, 2)}\n`);
   await assert.rejects(
     validateRepositoryInventory(broadSheets.root, broadSheets.manifest),

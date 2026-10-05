@@ -1,4 +1,4 @@
-/* global __dirname, require */
+/* global Buffer, __dirname, require */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -48,12 +48,31 @@ function fixture() {
     }
   };
   const context = vm.createContext({ console });
+  let uuid = 0;
+  const defaultOidcPayload = {
+    iss: 'https://accounts.google.com',
+    sub: 'principal-1',
+    aud: 'apps-script-client-id',
+    email: 'admin@example.test',
+    email_verified: true,
+    name: 'Administración QA',
+    iat: 1000,
+    exp: 5000
+  };
+  let oidcPayload = { ...defaultOidcPayload };
   context.Utilities = {
     DigestAlgorithm: { SHA_256: 'sha256' },
     Charset: { UTF_8: 'utf8' },
     computeDigest: (algorithm, value, charset) => [
       ...crypto.createHash(algorithm).update(value, charset).digest()
-    ]
+    ],
+    base64DecodeWebSafe: value => [...Buffer.from(value, 'base64url')],
+    newBlob: value => ({ getDataAsString: () => Buffer.from(value).toString('utf8') }),
+    getUuid: () => `00000000-0000-4000-8000-${String(++uuid).padStart(12, '0')}`
+  };
+  context.ScriptApp = {
+    getIdentityToken: () =>
+      `header.${Buffer.from(JSON.stringify(oidcPayload)).toString('base64url')}.signature`
   };
   context.SpreadsheetApp = { getActiveSpreadsheet: () => spreadsheet, flush() {} };
   context.PropertiesService = {
@@ -94,6 +113,7 @@ function fixture() {
     'AERP-041_IsolatedInstallerEngine.js',
     'AERP-041_InstallerIntegration.js',
     '11_Installer.js',
+    'AERP-041_SecureBootstrap.js',
     'AERP-041_AppsScriptRuntimeAdapter.js'
   ])
     vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), context);
@@ -159,8 +179,155 @@ function fixture() {
     }
   }
   const create = () => run('var runtime = aerpCreateAppsScriptInstallerRuntime(configuration);');
-  return { run, create, seedAuthorization, properties, sheets, control, sheet, context };
+  const setOidcPayload = overrides => {
+    oidcPayload = { ...defaultOidcPayload, ...overrides };
+  };
+  return {
+    run,
+    create,
+    seedAuthorization,
+    setOidcPayload,
+    properties,
+    sheets,
+    control,
+    sheet,
+    context
+  };
 }
+
+test('one-time OIDC bootstrap provisions explicit admin grants and waits for application', () => {
+  const f = fixture();
+  f.run(`
+    var applicationReady = false;
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' },
+      validateApplication: () => applicationReady
+        ? { ok: true, errors: [] }
+        : { ok: false, errors: ['APP_BINDING_REQUIRED'] }
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+  `);
+  const incomplete = f.run('secureInstaller.apply(request)');
+  assert.equal(incomplete.ok, false);
+  assert.equal(incomplete.state, 'INCOMPLETE');
+  assert.equal(f.sheets.size, 17);
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  for (const name of [
+    'CORE_EMPRESAS',
+    'CORE_USUARIOS',
+    'CORE_ROLES',
+    'CORE_MODULOS',
+    'CORE_USUARIO_ROL',
+    'CORE_ROL_MODULO',
+    'CORE_PERMISOS'
+  ]) {
+    assert.ok(f.sheets.get(name).getLastRow() > 1, name);
+  }
+  f.run('applicationReady = true');
+  const complete = f.run('secureInstaller.apply(request)');
+  assert.equal(complete.ok, true);
+  assert.equal(complete.state, 'COMPLETE');
+  assert.equal(f.run('secureInstaller.canAccess(request)'), true);
+  assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+});
+
+test('OIDC bootstrap rejects invalid configuration and reports ambiguous claim persistence', () => {
+  const f = fixture();
+  f.setOidcPayload({ aud: 'unexpected-client-id' });
+  f.run(`
+    var bootstrap = aerpCreateAppsScriptSecureBootstrap({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+  `);
+  assert.throws(() => f.run("bootstrap.issueConfirmation({ intent: 'APPLY' })"));
+  f.setOidcPayload({});
+  f.run(`
+    var invalidTtlBootstrap = aerpCreateAppsScriptSecureBootstrap({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', confirmationTtlSeconds: 901,
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+  `);
+  assert.throws(() => f.run("invalidTtlBootstrap.issueConfirmation({ intent: 'APPLY' })"));
+  assert.equal(f.properties.size, 0);
+  assert.equal(f.sheets.size, 0);
+
+  const ambiguous = fixture();
+  ambiguous.run(`
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' },
+      validateApplication: () => ({ ok: false, errors: ['APP_BINDING_REQUIRED'] })
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+  `);
+  ambiguous.control.ambiguousKey = 'bootstrap:claim';
+  const unknown = ambiguous.run('secureInstaller.apply(request)');
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.state, 'INCOMPLETE');
+  assert.equal(unknown.persistence, 'UNKNOWN');
+});
+
+test('one-time bootstrap denies a non-empty isolated-copy target before creating tables', () => {
+  const f = fixture();
+  f.sheet('UNRELATED', [['occupied']]);
+  f.run(`
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' },
+      validateApplication: () => ({ ok: false, errors: ['APP_BINDING_REQUIRED'] })
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+  `);
+  const result = f.run('secureInstaller.apply(request)');
+  assert.equal(result.ok, false);
+  assert.equal(result.state, 'INCOMPLETE');
+  assert.deepEqual([...f.sheets.keys()], ['UNRELATED']);
+  assert.equal(
+    [...f.properties.keys()].some(key => key.includes('bootstrap:provisioned')),
+    false
+  );
+});
+
+test('bootstrap resume rejects data added to an installer-owned commercial table', () => {
+  const f = fixture();
+  f.run(`
+    var applicationReady = false;
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' },
+      validateApplication: () => applicationReady
+        ? { ok: true, errors: [] }
+        : { ok: false, errors: ['APP_BINDING_REQUIRED'] }
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+  `);
+  assert.equal(f.run('secureInstaller.apply(request)').state, 'INCOMPLETE');
+  const clients = f.sheets.get('ERP_CLIENTES');
+  f.control.locked = true;
+  clients
+    .getRange(2, 1, 1, clients.getLastColumn())
+    .setValues([Array(clients.getLastColumn()).fill('unexpected')]);
+  f.control.locked = false;
+  f.run('applicationReady = true');
+  const rejected = f.run('secureInstaller.apply(request)');
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.state, 'INCOMPLETE');
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CLAIMED/);
+});
 
 test('durable install uses real authorization, preserves 17 tables and survives a new runtime', () => {
   const f = fixture();
