@@ -255,6 +255,12 @@
       "justification": "Fail-closed coordinator for confirmation, completion and adapter binding."
     },
     {
+      "path": "AERP-041_AppSheetCoreReadinessValidator.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Fail-closed AppSheet Core readiness and manual deployment attestation gate."
+    },
+    {
       "path": "AERP-041_SecureBootstrap.js",
       "role": "production",
       "classification": "productive",
@@ -314,6 +320,7 @@
     "aerpCreateIsolatedInstallerEngine",
     "aerpCreateIsolatedInstallerIntegration",
     "aerpCreateCommercialInstallerCoordinator",
+    "aerpCreateAppSheetCoreReadinessValidator",
     "aerpCreateAppsScriptSecureBootstrap",
     "aerpCreateSecureAppsScriptInstaller",
     "aerpCreateAppsScriptInstallerRuntime"

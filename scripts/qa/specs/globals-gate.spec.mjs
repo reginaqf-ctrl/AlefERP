@@ -882,10 +882,10 @@ test('real repository has no global collisions or dynamic-code blockers', async 
   );
   const evidence = await runGlobalsGate({ root, persist: false });
   assert.equal(evidence.exitCode, 0);
-  assert.equal(evidence.counts.includedFiles, 44);
+  assert.equal(evidence.counts.includedFiles, 45);
   assert.equal(evidence.counts.excludedFiles, 10);
-  assert.equal(evidence.counts.uniqueSymbols, 817);
-  assert.equal(evidence.counts.occurrences, 851);
+  assert.equal(evidence.counts.uniqueSymbols, 822);
+  assert.equal(evidence.counts.occurrences, 857);
   assert.equal(evidence.counts.duplicateSymbols, 0);
   assert.equal(evidence.counts.dynamicConstructions, 0);
   assert.deepEqual(evidence.collisions, []);

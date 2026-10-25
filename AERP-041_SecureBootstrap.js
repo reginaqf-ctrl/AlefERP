@@ -372,16 +372,24 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
 function aerpCreateSecureAppsScriptInstaller(configuration) {
   const config = configuration || {};
   const bootstrap = aerpCreateAppsScriptSecureBootstrap(config);
+  const appSheetCore = aerpCreateAppSheetCoreReadinessValidator(
+    Object.assign({}, config, {
+      trustedPrincipalVerifier: bootstrap.trustedPrincipalVerifier
+    })
+  );
   const runtimeConfiguration = Object.assign({}, config, {
     trustedPrincipalVerifier: bootstrap.trustedPrincipalVerifier,
     verifyConfirmation: bootstrap.verifyConfirmation,
     claimBootstrap: bootstrap.claimBootstrap,
-    consumeBootstrap: bootstrap.consumeBootstrap
+    consumeBootstrap: bootstrap.consumeBootstrap,
+    validateApplication: appSheetCore.validateApplication
   });
   const runtime = aerpCreateAppsScriptInstallerRuntime(runtimeConfiguration);
 
   return Object.freeze({
     issueConfirmation: bootstrap.issueConfirmation,
+    recordAppSheetCoreAttestation: appSheetCore.recordAttestation,
+    getAppSheetCoreReadiness: appSheetCore.getReadiness,
     analyze: runtime.analyze,
     plan: runtime.plan,
     verify: runtime.verify,

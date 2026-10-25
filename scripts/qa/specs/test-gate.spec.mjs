@@ -1082,8 +1082,8 @@ test('aggregates all nine declared suites to the reconciled total', () => {
     results,
     baseline()
   );
-  assert.equal(counts.total, 20 + 62 + 66 + 51 + 34 + 31 + 31 + 14 + 19);
-  assert.equal(counts.total, 328);
+  assert.equal(counts.total, 20 + 62 + 66 + 51 + 34 + 31 + 31 + 14 + 24);
+  assert.equal(counts.total, 333);
 });
 
 test('aggregation rejects missing, duplicate, incomplete, incompatible, and inconsistent results', () => {
