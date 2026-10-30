@@ -28,6 +28,23 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
   function opaque(value) {
     return typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
   }
+  function hasControlCharacter(value) {
+    return value.split('').some(function (character) {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    });
+  }
+  function safeBootstrapCellValue(value) {
+    if (typeof value === 'boolean') return true;
+    if (typeof value === 'number') return Number.isFinite(value);
+    return Boolean(
+      typeof value === 'string' &&
+      value.length > 0 &&
+      value.length <= 320 &&
+      !/^[\s]*[=+\-@]/.test(value) &&
+      !hasControlCharacter(value)
+    );
+  }
   function spreadsheet(target) {
     if (
       !Object.values(binding).every(opaque) ||
@@ -251,6 +268,39 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
     return true;
   }
 
+  function bootstrapPreflightEligible() {
+    if (activeMutation || typeof config.claimBootstrap !== 'function') return false;
+    const current = state();
+    if (!bootstrapTargetEligible()) return false;
+    const claimRaw = read('bootstrap:claim');
+    if (current.status === 'EMPTY') return claimRaw === null;
+    if (current.status !== 'INCOMPLETE' || !claimRaw || !principal) return false;
+    const claim = JSON.parse(claimRaw);
+    if (
+      !claim ||
+      claim.version !== 1 ||
+      claim.status !== 'CLAIMED' ||
+      claim.tenantId !== binding.tenantId ||
+      claim.subjectId !== principal.subjectId ||
+      !opaque(claim.confirmationId)
+    )
+      return false;
+    const confirmationRaw = read('bootstrap:confirmation:' + claim.confirmationId);
+    if (!confirmationRaw) return false;
+    const confirmation = JSON.parse(confirmationRaw);
+    return Boolean(
+      confirmation &&
+      confirmation.version === 1 &&
+      confirmation.status === 'CLAIMED' &&
+      confirmation.intent === 'APPLY' &&
+      confirmation.sourceId === binding.sourceId &&
+      confirmation.targetId === binding.boundTargetId &&
+      confirmation.tenantId === binding.tenantId &&
+      confirmation.issuer === principal.issuer &&
+      confirmation.subjectId === principal.subjectId
+    );
+  }
+
   function bootstrapRecords() {
     if (!bootstrapGrant) return null;
     const profile = bootstrapGrant.profile;
@@ -344,6 +394,16 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
         };
       })
     };
+    if (
+      Object.values(records).some(function (rows) {
+        return rows.some(function (record) {
+          return Object.values(record).some(function (value) {
+            return !safeBootstrapCellValue(value);
+          });
+        });
+      })
+    )
+      fail();
     return records;
   }
 
@@ -609,7 +669,9 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       if (!verifyIdentity(authentication)) fail();
       const metadataAdmin = adminAllowed();
       if (typeof config.claimBootstrap === 'function' && state().status !== 'COMPLETE') {
-        if (!claimBootstrap()) fail();
+        if (activeMutation) {
+          if (!claimBootstrap()) fail();
+        } else if (!bootstrapPreflightEligible()) fail();
       } else if (!metadataAdmin) fail();
       return work();
     } finally {

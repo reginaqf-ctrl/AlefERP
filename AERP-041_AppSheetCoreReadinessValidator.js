@@ -7,7 +7,7 @@
  * of the manual AppSheet deployment checks. An attestation is evidence, not an
  * authorization grant; AERP-036/AERP-037 remain authoritative.
  */
-const AERP_APPSHEET_CORE_READINESS_VERSION_ = '1.0.0';
+const AERP_APPSHEET_CORE_READINESS_VERSION_ = '1.1.0';
 const AERP_APPSHEET_CORE_ATTESTATION_KEY_ = 'AERP041:v1:appsheet-core-attestation';
 const AERP_APPSHEET_CORE_STATE_KEY_ = 'AERP041:v1:state';
 const AERP_APPSHEET_CORE_REQUIRED_CHECKS_ = Object.freeze([
@@ -15,13 +15,22 @@ const AERP_APPSHEET_CORE_REQUIRED_CHECKS_ = Object.freeze([
   'googleAuthenticationProvider',
   'allowAllSignedInUsersDisabled',
   'explicitUserAllowlist',
-  'securityFiltersAllTables',
   'updatesRestrictedByRole',
   'deploymentCheckPassed',
   'adminAllowTestPassed',
   'restrictedUserDenyTestPassed',
   'crossTenantDenyTestPassed',
   'auditHistoryReviewed'
+]);
+const AERP_APPSHEET_CORE_REQUIRED_TABLE_CHECKS_ = Object.freeze([
+  'physicalName',
+  'securityFilterVerified',
+  'updatePolicyVerified',
+  'adminAllowTestPassed',
+  'restrictedUserDenyTestPassed',
+  'crossTenantDenyTestPassed',
+  'evidenceReference',
+  'evidenceDigest'
 ]);
 
 function aerpCreateAppSheetCoreReadinessValidator(configuration) {
@@ -55,6 +64,15 @@ function aerpCreateAppSheetCoreReadinessValidator(configuration) {
       opaque(binding.targetId, 128) &&
       opaque(binding.tenantId, 128) &&
       binding.sourceId !== binding.targetId
+    );
+  }
+
+  function exactKeys(value, expected) {
+    return Boolean(
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected.slice().sort())
     );
   }
 
@@ -209,6 +227,41 @@ function aerpCreateAppSheetCoreReadinessValidator(configuration) {
     return result;
   }
 
+  function normalizedTableChecks(source, plan) {
+    if (!Array.isArray(source) || source.length !== plan.blueprint.tables.length) fail();
+    const provided = {};
+    source.forEach(function (entry) {
+      if (
+        !exactKeys(entry, AERP_APPSHEET_CORE_REQUIRED_TABLE_CHECKS_) ||
+        !opaque(entry.physicalName, 64) ||
+        provided[entry.physicalName] ||
+        entry.securityFilterVerified !== true ||
+        entry.updatePolicyVerified !== true ||
+        entry.adminAllowTestPassed !== true ||
+        entry.restrictedUserDenyTestPassed !== true ||
+        entry.crossTenantDenyTestPassed !== true ||
+        !opaque(entry.evidenceReference, 160) ||
+        !/^[a-f0-9]{64}$/.test(entry.evidenceDigest || '')
+      )
+        fail();
+      provided[entry.physicalName] = entry;
+    });
+    return plan.blueprint.tables.map(function (table) {
+      const entry = provided[table.physicalName];
+      if (!entry) fail();
+      return {
+        physicalName: table.physicalName,
+        securityFilterVerified: true,
+        updatePolicyVerified: true,
+        adminAllowTestPassed: true,
+        restrictedUserDenyTestPassed: true,
+        crossTenantDenyTestPassed: true,
+        evidenceReference: entry.evidenceReference,
+        evidenceDigest: entry.evidenceDigest
+      };
+    });
+  }
+
   function publicRecord(record) {
     return Object.freeze({
       ok: true,
@@ -220,6 +273,7 @@ function aerpCreateAppSheetCoreReadinessValidator(configuration) {
       targetId: record.targetId,
       tenantId: record.tenantId,
       attestedAt: record.attestedAt,
+      tablesVerified: record.tableChecks.length,
       persistence: 'CONFIRMED',
       errors: []
     });
@@ -233,6 +287,32 @@ function aerpCreateAppSheetCoreReadinessValidator(configuration) {
   }
 
   function attestationValid(record, principal, evidence) {
+    const recordKeys = [
+      'contractVersion',
+      'status',
+      'mode',
+      'sourceId',
+      'targetId',
+      'tenantId',
+      'appId',
+      'appVersion',
+      'templateVersion',
+      'deploymentCheckReference',
+      'evidenceDigest',
+      'checks',
+      'tableChecks',
+      'planDigest',
+      'schemaDigest',
+      'presentationDigest',
+      'reviewer',
+      'attestedAt',
+      'recordDigest'
+    ];
+    if (!exactKeys(record, recordKeys)) return false;
+    const unsigned = {};
+    recordKeys.forEach(function (key) {
+      if (key !== 'recordDigest') unsigned[key] = record[key];
+    });
     return Boolean(
       record &&
       record.contractVersion === AERP_APPSHEET_CORE_READINESS_VERSION_ &&
@@ -249,6 +329,8 @@ function aerpCreateAppSheetCoreReadinessValidator(configuration) {
       opaque(record.deploymentCheckReference, 160) &&
       /^[a-f0-9]{64}$/.test(record.evidenceDigest || '') &&
       JSON.stringify(normalizedChecks(record.checks)) === JSON.stringify(record.checks) &&
+      JSON.stringify(normalizedTableChecks(record.tableChecks, commercialPlan())) ===
+        JSON.stringify(record.tableChecks) &&
       record.planDigest === evidence.planDigest &&
       record.schemaDigest === evidence.schemaDigest &&
       record.presentationDigest === evidence.presentationDigest &&
@@ -256,7 +338,9 @@ function aerpCreateAppSheetCoreReadinessValidator(configuration) {
       record.reviewer.issuer === principal.issuer &&
       record.reviewer.subjectId === principal.subjectId &&
       record.reviewer.userId === principal.userId &&
-      Number.isFinite(Date.parse(record.attestedAt))
+      Number.isFinite(Date.parse(record.attestedAt)) &&
+      /^[a-f0-9]{64}$/.test(record.recordDigest || '') &&
+      digest(unsigned) === record.recordDigest
     );
   }
 
@@ -280,8 +364,9 @@ function aerpCreateAppSheetCoreReadinessValidator(configuration) {
           !/^[a-f0-9]{64}$/.test(source.evidenceDigest || '')
         )
           fail();
-        const checks = normalizedChecks(source.checks);
         const plan = commercialPlan();
+        const checks = normalizedChecks(source.checks);
+        const tableChecks = normalizedTableChecks(source.tableChecks, plan);
         const evidence = planEvidence(plan);
         const record = {
           contractVersion: AERP_APPSHEET_CORE_READINESS_VERSION_,
@@ -296,17 +381,25 @@ function aerpCreateAppSheetCoreReadinessValidator(configuration) {
           deploymentCheckReference: source.deploymentCheckReference,
           evidenceDigest: source.evidenceDigest,
           checks: checks,
+          tableChecks: tableChecks,
           planDigest: evidence.planDigest,
           schemaDigest: evidence.schemaDigest,
           presentationDigest: evidence.presentationDigest,
           reviewer: principal,
           attestedAt: new Date().toISOString()
         };
+        record.recordDigest = digest(record);
         const store = properties();
         const existing = readAttestation();
         if (existing) {
-          const comparableExisting = Object.assign({}, existing, { attestedAt: record.attestedAt });
-          if (JSON.stringify(comparableExisting) !== JSON.stringify(record)) fail();
+          if (!attestationValid(existing, principal, evidence)) fail();
+          const comparableExisting = Object.assign({}, existing);
+          const comparableRecord = Object.assign({}, record);
+          delete comparableExisting.attestedAt;
+          delete comparableExisting.recordDigest;
+          delete comparableRecord.attestedAt;
+          delete comparableRecord.recordDigest;
+          if (JSON.stringify(comparableExisting) !== JSON.stringify(comparableRecord)) fail();
           return publicRecord(existing);
         }
         mutationAttempted = true;

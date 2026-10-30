@@ -271,6 +271,12 @@
       "role": "production",
       "classification": "productive",
       "justification": "Durable isolated Apps Script installer with real metadata authorization."
+    },
+    {
+      "path": "AERP-041_OperationalController.js",
+      "role": "production",
+      "classification": "productive",
+      "justification": "Fail-closed operational workflow for secure installation and AppSheet Core completion."
     }
   ],
   "excludedFiles": [
@@ -313,6 +319,10 @@
     {
       "path": "AERP-041_AppsScriptRuntimeAdapter.test.js",
       "reason": "Canonical Node test suite."
+    },
+    {
+      "path": "AERP-041_OperationalController.test.js",
+      "reason": "Canonical Node test suite."
     }
   ],
   "publicEntrypoints": [
@@ -323,7 +333,12 @@
     "aerpCreateAppSheetCoreReadinessValidator",
     "aerpCreateAppsScriptSecureBootstrap",
     "aerpCreateSecureAppsScriptInstaller",
-    "aerpCreateAppsScriptInstallerRuntime"
+    "aerpCreateAppsScriptInstallerRuntime",
+    "aerpCreateOperationalInstallerController",
+    "aerpCreateAppsScriptOperationalInstallerController",
+    "menuAerp041SecureInstall",
+    "menuAerp041CompleteAppSheetCore",
+    "menuAerp041SecureStatus"
   ],
   "policy": {
     "exactCollision": "error",

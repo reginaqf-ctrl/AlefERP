@@ -15,6 +15,7 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
   };
   const company = config.company || {};
   const expectedAudience = config.expectedAudience;
+  const expectedAdminEmail = config.expectedAdminEmail;
   const confirmationTtlSeconds = Number(config.confirmationTtlSeconds || 600);
   const prefix = 'AERP041:v1:bootstrap:';
   const issuers = ['accounts.google.com', 'https://accounts.google.com'];
@@ -26,6 +27,27 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
   function text(value, maximum) {
     return typeof value === 'string' && value.trim() && value.trim().length <= maximum
       ? value.trim()
+      : null;
+  }
+
+  function hasControlCharacter(value) {
+    return value.split('').some(function (character) {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    });
+  }
+
+  function sheetSafeText(value, maximum) {
+    const normalized = text(value, maximum);
+    return normalized && !/^[\s]*[=+\-@]/.test(normalized) && !hasControlCharacter(normalized)
+      ? normalized
+      : null;
+  }
+
+  function normalizedEmail(value) {
+    const normalized = sheetSafeText(value, 320);
+    return normalized && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
+      ? normalized.toLowerCase()
       : null;
   }
 
@@ -69,6 +91,7 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
       !opaque(binding.targetId) ||
       !opaque(binding.tenantId) ||
       binding.sourceId === binding.targetId ||
+      !normalizedEmail(expectedAdminEmail) ||
       !Number.isInteger(confirmationTtlSeconds) ||
       confirmationTtlSeconds < 60 ||
       confirmationTtlSeconds > 900
@@ -112,8 +135,10 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
       const current = nowSeconds();
       const issuer = text(payload.iss, 128);
       const subjectId = text(payload.sub, 128);
-      const email = text(payload.email, 320);
-      const name = text(payload.name, 160) || email;
+      const email = normalizedEmail(payload.email);
+      const suppliedName =
+        payload.name === undefined || payload.name === null ? null : payload.name;
+      const name = suppliedName === null ? email : sheetSafeText(suppliedName, 160);
       if (
         issuers.indexOf(issuer) === -1 ||
         !opaque(subjectId) ||
@@ -122,6 +147,8 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
         payload.exp <= current ||
         (Number.isFinite(payload.iat) && payload.iat > current + 60) ||
         !email ||
+        !name ||
+        email.toLowerCase() !== normalizedEmail(expectedAdminEmail) ||
         payload.email_verified !== true
       )
         fail();
@@ -148,10 +175,10 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
 
   function companyConfiguration() {
     const normalized = {
-      code: text(company.code, 64),
-      name: text(company.name, 160),
-      currency: text(company.currency, 16),
-      timeZone: text(company.timeZone, 64)
+      code: sheetSafeText(company.code, 64),
+      name: sheetSafeText(company.name, 160),
+      currency: sheetSafeText(company.currency, 16),
+      timeZone: sheetSafeText(company.timeZone, 64)
     };
     if (
       Object.values(normalized).some(function (value) {
@@ -163,7 +190,12 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
   }
 
   function configurationDigest() {
-    return digest({ binding: binding, company: companyConfiguration(), planDigest: planDigest() });
+    return digest({
+      binding: binding,
+      company: companyConfiguration(),
+      expectedAdminEmail: normalizedEmail(expectedAdminEmail),
+      planDigest: planDigest()
+    });
   }
 
   function readRecord(id) {
@@ -227,6 +259,103 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
     }
   }
 
+  /**
+   * Renews only the confirmation evidence attached to an already-claimed,
+   * incomplete bootstrap. This does not create a new grant: the same OIDC
+   * subject, tenant, target, commercial plan and configuration must still be
+   * active. It exists solely so a manual AppSheet Core review can outlive the
+   * short confirmation TTL without persisting a raw nonce outside this call.
+   */
+  function renewConfirmation(input) {
+    const source = input || {};
+    if (source.intent !== 'APPLY') fail();
+    spreadsheet();
+    const lock = LockService.getDocumentLock();
+    if (!lock || lock.tryLock(1000) !== true) fail();
+    try {
+      const store = properties();
+      const stateRaw = store.getProperty('AERP041:v1:state');
+      const currentState = stateRaw ? JSON.parse(stateRaw) : null;
+      if (
+        !currentState ||
+        currentState.status !== 'INCOMPLETE' ||
+        currentState.sourceId !== binding.sourceId ||
+        currentState.boundTargetId !== binding.targetId ||
+        currentState.tenantId !== binding.tenantId
+      )
+        fail();
+
+      const identity = principal();
+      const claimKey = prefix + 'claim';
+      const claimRaw = store.getProperty(claimKey);
+      if (!claimRaw) fail();
+      const claim = JSON.parse(claimRaw);
+      const prior = readRecord(claim.confirmationId);
+      if (
+        claim.version !== 1 ||
+        claim.status !== 'CLAIMED' ||
+        claim.subjectId !== identity.subjectId ||
+        claim.tenantId !== binding.tenantId ||
+        prior.status !== 'CLAIMED' ||
+        prior.intent !== 'APPLY' ||
+        prior.sourceId !== binding.sourceId ||
+        prior.targetId !== binding.targetId ||
+        prior.tenantId !== binding.tenantId ||
+        prior.issuer !== identity.issuer ||
+        prior.subjectId !== identity.subjectId ||
+        prior.planDigest !== planDigest() ||
+        prior.configurationDigest !== configurationDigest()
+      )
+        fail();
+
+      const confirmationId = String(Utilities.getUuid()).replace(/-/g, '_');
+      const nonce = String(Utilities.getUuid()) + String(Utilities.getUuid());
+      const record = {
+        version: 1,
+        confirmationId: confirmationId,
+        status: 'CLAIMED',
+        intent: 'APPLY',
+        sourceId: binding.sourceId,
+        targetId: binding.targetId,
+        tenantId: binding.tenantId,
+        issuer: identity.issuer,
+        subjectId: identity.subjectId,
+        planDigest: prior.planDigest,
+        configurationDigest: prior.configurationDigest,
+        nonceDigest: digest(nonce),
+        expiresAt: nowSeconds() + confirmationTtlSeconds
+      };
+      try {
+        writeRecord(record);
+      } catch (_error) {
+        const recovered = readRecord(confirmationId);
+        if (JSON.stringify(recovered) !== JSON.stringify(record)) fail();
+      }
+
+      const renewedClaim = {
+        version: 1,
+        status: 'CLAIMED',
+        confirmationId: confirmationId,
+        subjectId: identity.subjectId,
+        tenantId: binding.tenantId
+      };
+      try {
+        store.setProperty(claimKey, JSON.stringify(renewedClaim));
+      } catch (_error) {
+        const recoveredClaim = JSON.parse(store.getProperty(claimKey) || 'null');
+        if (JSON.stringify(recoveredClaim) !== JSON.stringify(renewedClaim)) fail();
+      }
+      const storedClaim = JSON.parse(store.getProperty(claimKey) || 'null');
+      if (
+        JSON.stringify(storedClaim) !== JSON.stringify(renewedClaim) ||
+        JSON.stringify(readRecord(confirmationId)) !== JSON.stringify(record)
+      )
+        fail();
+      return Object.freeze({ confirmationId: confirmationId, nonce: nonce });
+    } finally {
+      lock.releaseLock();
+    }
+  }
   function matchingRecord(input, allowedStatuses) {
     const source = input || {};
     const evidence = source.evidence || source;
@@ -358,6 +487,7 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
   return Object.freeze({
     trustedPrincipalVerifier: verifyPrincipal,
     issueConfirmation: issueConfirmation,
+    renewConfirmation: renewConfirmation,
     verifyConfirmation: verifyConfirmation,
     claimBootstrap: claimBootstrap,
     consumeBootstrap: consumeBootstrap
@@ -388,6 +518,7 @@ function aerpCreateSecureAppsScriptInstaller(configuration) {
 
   return Object.freeze({
     issueConfirmation: bootstrap.issueConfirmation,
+    renewConfirmation: bootstrap.renewConfirmation,
     recordAppSheetCoreAttestation: appSheetCore.recordAttestation,
     getAppSheetCoreReadiness: appSheetCore.getReadiness,
     analyze: runtime.analyze,

@@ -115,7 +115,8 @@ function fixture() {
     '11_Installer.js',
     'AERP-041_AppSheetCoreReadinessValidator.js',
     'AERP-041_SecureBootstrap.js',
-    'AERP-041_AppsScriptRuntimeAdapter.js'
+    'AERP-041_AppsScriptRuntimeAdapter.js',
+    'AERP-041_OperationalController.js'
   ])
     vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), context);
   vm.runInContext(
@@ -151,14 +152,23 @@ function fixture() {
         googleAuthenticationProvider: true,
         allowAllSignedInUsersDisabled: true,
         explicitUserAllowlist: true,
-        securityFiltersAllTables: true,
         updatesRestrictedByRole: true,
         deploymentCheckPassed: true,
         adminAllowTestPassed: true,
         restrictedUserDenyTestPassed: true,
         crossTenantDenyTestPassed: true,
         auditHistoryReviewed: true
-      }
+      },
+      tableChecks: aerpBuildCommercialInstallerPlan().blueprint.tables.map((table, index) => ({
+        physicalName: table.physicalName,
+        securityFilterVerified: true,
+        updatePolicyVerified: true,
+        adminAllowTestPassed: true,
+        restrictedUserDenyTestPassed: true,
+        crossTenantDenyTestPassed: true,
+        evidenceReference: 'TABLE_CHECK_' + String(index + 1).padStart(2, '0'),
+        evidenceDigest: String(index + 1).padStart(64, '0')
+      }))
     };
   `,
     context
@@ -221,7 +231,8 @@ test('one-time OIDC bootstrap provisions explicit admin grants and waits for app
   f.run(`
     var secureInstaller = aerpCreateSecureAppsScriptInstaller({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' },
       validateApplication: () => ({ ok: true, errors: [] })
     });
@@ -259,12 +270,94 @@ test('one-time OIDC bootstrap provisions explicit admin grants and waits for app
   assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
 });
 
+test('operational controller completes the real secure runtime from clean preflight', () => {
+  const f = fixture();
+  f.run(`
+    var clockMs = 2000000;
+    var operational = aerpCreateOperationalInstallerController({
+      readConfiguration() {
+        return {
+          sourceId: 'source-1', tenantId: 'tenant-A',
+          expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+          company: {
+            code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid'
+          }
+        };
+      },
+      getTargetId: () => 'target-1',
+      createSecureInstaller(configuration) {
+        return aerpCreateSecureAppsScriptInstaller(Object.assign({}, configuration, {
+          now: () => clockMs
+        }));
+      },
+      readAppSheetAttestation: () => appSheetCoreAttestation,
+      confirmPlan: () => true,
+      confirmCompletion: () => true
+    });
+  `);
+  const before = f.control.writes;
+  const preview = f.run('operational.preview()');
+  assert.equal(preview.ok, true);
+  assert.equal(preview.state, 'CLEAN');
+  assert.equal(f.control.writes, before);
+
+  const incomplete = f.run('operational.start()');
+  assert.equal(incomplete.ok, false);
+  assert.equal(incomplete.state, 'INCOMPLETE');
+  assert.equal(f.sheets.size, 17);
+
+  const complete = f.run('operational.complete()');
+  assert.equal(complete.ok, true);
+  assert.equal(complete.state, 'COMPLETE');
+
+  const status = f.run('operational.status()');
+  assert.equal(status.ok, true);
+  assert.equal(status.state, 'COMPLETE');
+  assert.equal(status.appSheetReady, true);
+  assert.equal(status.verified, true);
+});
+
+test('operational preflight rejects wrong identity and cross-tenant requests without mutation', () => {
+  const wrongIdentity = fixture();
+  wrongIdentity.setOidcPayload({ email: 'other@example.test' });
+  wrongIdentity.run(`
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+  `);
+  const deniedIdentity = wrongIdentity.run('secureInstaller.plan(request)');
+  assert.equal(deniedIdentity.ok, false);
+  assert.equal(deniedIdentity.state, 'INCOMPLETE');
+  assert.equal(wrongIdentity.control.writes, 0);
+
+  const crossTenant = fixture();
+  crossTenant.run(`
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.tenantId = 'tenant-B';
+  `);
+  const deniedTenant = crossTenant.run('secureInstaller.plan(request)');
+  assert.equal(deniedTenant.ok, false);
+  assert.equal(deniedTenant.state, 'INCOMPLETE');
+  assert.equal(crossTenant.control.writes, 0);
+});
+
 test('AppSheet Core attestation requires the exact manual acceptance checklist', () => {
   const f = fixture();
   f.run(`
     var secureInstaller = aerpCreateSecureAppsScriptInstaller({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
     request.identity = { provider: 'GOOGLE_OIDC' };
@@ -279,12 +372,41 @@ test('AppSheet Core attestation requires the exact manual acceptance checklist',
   assert.equal(f.run('secureInstaller.canAccess(request)'), false);
 });
 
+test('AppSheet Core attestation requires one verified evidence row for every blueprint table', () => {
+  for (const mutation of [
+    'appSheetCoreAttestation.tableChecks.pop()',
+    "appSheetCoreAttestation.tableChecks[1].physicalName = 'CORE_EMPRESAS'",
+    'appSheetCoreAttestation.tableChecks[2].securityFilterVerified = false',
+    "appSheetCoreAttestation.tableChecks[3].evidenceDigest = 'invalid'"
+  ]) {
+    const f = fixture();
+    f.run(`
+      var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+        sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+        expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+        now: () => 2000000,
+        company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+      });
+      request.identity = { provider: 'GOOGLE_OIDC' };
+      request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+    `);
+    assert.equal(f.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
+    f.run(mutation);
+    assert.equal(
+      f.run('secureInstaller.recordAppSheetCoreAttestation(appSheetCoreAttestation).ok'),
+      false
+    );
+    assert.equal(f.properties.has('AERP041:v1:appsheet-core-attestation'), false);
+  }
+});
+
 test('AppSheet Core attestation is one-time, idempotent and bound to one app', () => {
   const f = fixture();
   f.run(`
     var secureInstaller = aerpCreateSecureAppsScriptInstaller({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
     request.identity = { provider: 'GOOGLE_OIDC' };
@@ -310,7 +432,8 @@ test('ambiguous AppSheet Core attestation persistence is reported without granti
   f.run(`
     var secureInstaller = aerpCreateSecureAppsScriptInstaller({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
     request.identity = { provider: 'GOOGLE_OIDC' };
@@ -329,14 +452,15 @@ test('AppSheet Core attestation rejects a principal without explicit metadata ad
   f.run(`
     var secureInstaller = aerpCreateSecureAppsScriptInstaller({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
     request.identity = { provider: 'GOOGLE_OIDC' };
     request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
   `);
   assert.equal(f.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
-  f.setOidcPayload({ sub: 'principal-without-role', email: 'restricted@example.test' });
+  f.setOidcPayload({ sub: 'principal-without-role' });
   assert.equal(
     f.run('secureInstaller.recordAppSheetCoreAttestation(appSheetCoreAttestation).ok'),
     false
@@ -349,7 +473,8 @@ test('tampered AppSheet Core evidence never completes the installation', () => {
   f.run(`
     var secureInstaller = aerpCreateSecureAppsScriptInstaller({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
     request.identity = { provider: 'GOOGLE_OIDC' };
@@ -373,13 +498,122 @@ test('tampered AppSheet Core evidence never completes the installation', () => {
   assert.equal(f.run('secureInstaller.canAccess(request)'), false);
 });
 
+test('every persisted AppSheet attestation field is covered by tamper evidence', () => {
+  const mutations = [
+    record => (record.appId = 'other-app'),
+    record => (record.appVersion += 1),
+    record => (record.templateVersion = '9.9.9'),
+    record => (record.deploymentCheckReference = 'OTHER_CHECK'),
+    record => (record.evidenceDigest = 'b'.repeat(64)),
+    record => (record.attestedAt = '2030-01-01T00:00:00.000Z'),
+    record => (record.tableChecks[0].evidenceReference = 'OTHER_TABLE_CHECK'),
+    record => (record.tableChecks[0].evidenceDigest = 'c'.repeat(64))
+  ];
+  for (const mutate of mutations) {
+    const f = fixture();
+    f.run(`
+      var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+        sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+        expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+        now: () => 2000000,
+        company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+      });
+      request.identity = { provider: 'GOOGLE_OIDC' };
+      request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+    `);
+    assert.equal(f.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
+    assert.equal(
+      f.run('secureInstaller.recordAppSheetCoreAttestation(appSheetCoreAttestation).ok'),
+      true
+    );
+    const key = 'AERP041:v1:appsheet-core-attestation';
+    const record = JSON.parse(f.properties.get(key));
+    mutate(record);
+    f.properties.set(key, JSON.stringify(record));
+    assert.equal(f.run('secureInstaller.getAppSheetCoreReadiness().ok'), false);
+    assert.equal(f.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
+    assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  }
+});
+
+test('bootstrap is restricted to the preapproved administrator email', () => {
+  const f = fixture();
+  f.run(`
+    var bootstrap = aerpCreateAppsScriptSecureBootstrap({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'approved@example.test',
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+  `);
+  assert.throws(() => f.run("bootstrap.issueConfirmation({ intent: 'APPLY' })"));
+  assert.equal(f.properties.size, 0);
+  assert.equal(f.sheets.size, 0);
+});
+
+test('bootstrap rejects formula-capable identity and company text before any write', () => {
+  const identity = fixture();
+  identity.setOidcPayload({ name: '=IMPORTXML("https://example.test","//x")' });
+  identity.run(`
+    var bootstrap = aerpCreateAppsScriptSecureBootstrap({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+  `);
+  assert.throws(() => identity.run("bootstrap.issueConfirmation({ intent: 'APPLY' })"));
+  assert.equal(identity.control.writes, 0);
+  assert.equal(identity.properties.size, 0);
+  assert.equal(identity.sheets.size, 0);
+
+  const company = fixture();
+  company.run(`
+    var bootstrap = aerpCreateAppsScriptSecureBootstrap({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: '+SUM(1,1)', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+  `);
+  assert.throws(() => company.run("bootstrap.issueConfirmation({ intent: 'APPLY' })"));
+  assert.equal(company.control.writes, 0);
+  assert.equal(company.properties.size, 0);
+  assert.equal(company.sheets.size, 0);
+});
+
+test('OIDC bootstrap rejects invalid issuer, subject, lifetime and verified-email claims', () => {
+  for (const payload of [
+    { iss: 'https://issuer.example.test' },
+    { sub: 'invalid subject' },
+    { exp: 1999 },
+    { iat: 2061 },
+    { email_verified: false }
+  ]) {
+    const f = fixture();
+    f.setOidcPayload(payload);
+    f.run(`
+      var bootstrap = aerpCreateAppsScriptSecureBootstrap({
+        sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+        expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+        now: () => 2000000,
+        company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+      });
+    `);
+    assert.throws(() => f.run("bootstrap.issueConfirmation({ intent: 'APPLY' })"));
+    assert.equal(f.properties.size, 0);
+    assert.equal(f.sheets.size, 0);
+  }
+});
+
 test('OIDC bootstrap rejects invalid configuration and reports ambiguous claim persistence', () => {
   const f = fixture();
   f.setOidcPayload({ aud: 'unexpected-client-id' });
   f.run(`
     var bootstrap = aerpCreateAppsScriptSecureBootstrap({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
   `);
@@ -388,7 +622,8 @@ test('OIDC bootstrap rejects invalid configuration and reports ambiguous claim p
   f.run(`
     var invalidTtlBootstrap = aerpCreateAppsScriptSecureBootstrap({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', confirmationTtlSeconds: 901,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      confirmationTtlSeconds: 901,
       now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
@@ -401,7 +636,8 @@ test('OIDC bootstrap rejects invalid configuration and reports ambiguous claim p
   ambiguous.run(`
     var secureInstaller = aerpCreateSecureAppsScriptInstaller({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
     request.identity = { provider: 'GOOGLE_OIDC' };
@@ -420,7 +656,8 @@ test('one-time bootstrap denies a non-empty isolated-copy target before creating
   f.run(`
     var secureInstaller = aerpCreateSecureAppsScriptInstaller({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
     request.identity = { provider: 'GOOGLE_OIDC' };
@@ -441,7 +678,8 @@ test('bootstrap resume rejects data added to an installer-owned commercial table
   f.run(`
     var secureInstaller = aerpCreateSecureAppsScriptInstaller({
       sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
-      expectedAudience: 'apps-script-client-id', now: () => 2000000,
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
       company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
     });
     request.identity = { provider: 'GOOGLE_OIDC' };
@@ -465,6 +703,105 @@ test('bootstrap resume rejects data added to an installer-owned commercial table
   assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CLAIMED/);
 });
 
+test('expired bootstrap evidence can be renewed by the same principal after manual AppSheet work', () => {
+  const f = fixture();
+  f.run(`
+    var clockMs = 2000000;
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      confirmationTtlSeconds: 60,
+      now: () => clockMs,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+  `);
+  assert.equal(f.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
+  f.run('clockMs = 2061000');
+  assert.equal(
+    f.run('secureInstaller.recordAppSheetCoreAttestation(appSheetCoreAttestation).ok'),
+    true
+  );
+  f.run("request.confirmation = secureInstaller.renewConfirmation({ intent: 'APPLY' })");
+  const complete = f.run('secureInstaller.apply(request)');
+  assert.equal(complete.ok, true);
+  assert.equal(complete.state, 'COMPLETE');
+  assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+});
+
+test('renewal rebinds the claim so superseded confirmation evidence is denied', () => {
+  const f = fixture();
+  f.run(`
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+  `);
+  assert.equal(f.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
+  f.run(`
+    var supersededConfirmation = request.confirmation;
+    var renewedConfirmation = secureInstaller.renewConfirmation({ intent: 'APPLY' });
+    request.confirmation = supersededConfirmation;
+  `);
+  assert.equal(f.run('secureInstaller.apply(request).ok'), false);
+  f.run('request.confirmation = renewedConfirmation');
+  assert.equal(f.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
+});
+
+test('renewal rejects a different OIDC subject without changing the active claim', () => {
+  const f = fixture();
+  f.run(`
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+  `);
+  assert.equal(f.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
+  const claim = f.properties.get('AERP041:v1:bootstrap:claim');
+  f.setOidcPayload({ sub: 'different-principal', email: 'other@example.test' });
+  assert.throws(() => f.run("secureInstaller.renewConfirmation({ intent: 'APPLY' })"));
+  assert.equal(f.properties.get('AERP041:v1:bootstrap:claim'), claim);
+});
+
+test('renewal requires an incomplete claimed bootstrap and recovers committed claim responses', () => {
+  const fresh = fixture();
+  fresh.run(`
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+  `);
+  assert.throws(() => fresh.run("secureInstaller.renewConfirmation({ intent: 'APPLY' })"));
+  assert.equal(fresh.properties.size, 0);
+
+  const ambiguous = fixture();
+  ambiguous.run(`
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => 2000000,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' }
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+  `);
+  assert.equal(ambiguous.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
+  ambiguous.control.ambiguousKey = 'bootstrap:claim';
+  const renewed = ambiguous.run("secureInstaller.renewConfirmation({ intent: 'APPLY' })");
+  assert.match(renewed.confirmationId, /^[A-Za-z0-9_-]+$/);
+  assert.equal(typeof renewed.nonce, 'string');
+});
 test('durable install uses real authorization, preserves 17 tables and survives a new runtime', () => {
   const f = fixture();
   f.seedAuthorization();

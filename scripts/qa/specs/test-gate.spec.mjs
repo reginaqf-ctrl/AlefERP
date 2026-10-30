@@ -1075,15 +1075,16 @@ test('parseReporterResult rejects missing and duplicate bounded results', () => 
   );
 });
 
-test('aggregates all nine declared suites to the reconciled total', () => {
+test('aggregates all ten declared suites to the reconciled total', () => {
   const results = SUITES.map(([suitePath, total]) => suiteResult(suitePath, total));
   const counts = aggregateSuiteResults(
     SUITES.map(([suitePath]) => suitePath),
     results,
     baseline()
   );
-  assert.equal(counts.total, 20 + 62 + 66 + 51 + 34 + 31 + 31 + 14 + 24);
-  assert.equal(counts.total, 333);
+  const expectedTotal = SUITES.reduce((total, [, suiteTotal]) => total + suiteTotal, 0);
+  assert.equal(counts.total, expectedTotal);
+  assert.equal(counts.total, REAL_MANIFEST.reconciledBaseline.total);
 });
 
 test('aggregation rejects missing, duplicate, incomplete, incompatible, and inconsistent results', () => {
