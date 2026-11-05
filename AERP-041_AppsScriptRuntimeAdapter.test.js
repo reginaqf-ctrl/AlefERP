@@ -226,6 +226,14 @@ function fixture() {
   };
 }
 
+function sheetRecords(sheet) {
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  return sheet
+    .getRange(2, 1, sheet.getLastRow() - 1, headers.length)
+    .getValues()
+    .map(row => Object.fromEntries(headers.map((header, index) => [header, row[index]])));
+}
+
 test('one-time OIDC bootstrap provisions explicit admin grants and waits for application', () => {
   const f = fixture();
   f.run(`
@@ -255,6 +263,49 @@ test('one-time OIDC bootstrap provisions explicit admin grants and waits for app
   ]) {
     assert.ok(f.sheets.get(name).getLastRow() > 1, name);
   }
+  const incompletePermissions = sheetRecords(f.sheets.get('CORE_PERMISOS'));
+  assert.equal(incompletePermissions.length, 8);
+  assert.equal(
+    incompletePermissions.filter(permission => permission.Nivel_Acceso === 'ALLOW').length,
+    1
+  );
+  assert.equal(
+    incompletePermissions.find(permission => permission.ID_Modulo === 'ADMINISTRACION')
+      .Puede_Administrar,
+    true
+  );
+  assert.equal(
+    incompletePermissions
+      .filter(permission => permission.ID_Modulo !== 'ADMINISTRACION')
+      .every(
+        permission => permission.Nivel_Acceso === 'DENY' && permission.Puede_Administrar === false
+      ),
+    true
+  );
+  assert.equal(
+    sheetRecords(f.sheets.get('CORE_ROL_MODULO'))
+      .filter(module => module.ID_Modulo !== 'ADMINISTRACION')
+      .every(module => module.Visible_Menu === false),
+    true
+  );
+  f.context.bootstrapUserId = sheetRecords(f.sheets.get('CORE_USUARIOS'))[0].ID_Usuario;
+  f.run(`
+    var bootstrapTrustedVerifier = function () {
+      return { ok: true, verified: true, principal: {
+        issuer: 'https://accounts.google.com', subjectId: 'principal-1', userId: bootstrapUserId
+      }};
+    };
+  `);
+  assert.equal(
+    f.run(`
+      aerpAuthorizeFromMetadata({
+        authentication: { token: 'trusted' },
+        companyId: 'tenant-A', moduleId: 'CLIENTES', action: 'VIEW',
+        context: { companyId: 'tenant-A' }
+      }, { trustedPrincipalVerifier: bootstrapTrustedVerifier }).decision
+    `),
+    'DENY'
+  );
   const attested = f.run('secureInstaller.recordAppSheetCoreAttestation(appSheetCoreAttestation)');
   assert.equal(attested.ok, true);
   assert.equal(attested.mode, 'APPSHEET_CORE_MANUAL_ATTESTATION');
@@ -268,6 +319,26 @@ test('one-time OIDC bootstrap provisions explicit admin grants and waits for app
   assert.equal(complete.state, 'COMPLETE');
   assert.equal(f.run('secureInstaller.canAccess(request)'), true);
   assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+  assert.equal(
+    sheetRecords(f.sheets.get('CORE_PERMISOS')).every(
+      permission => permission.Nivel_Acceso === 'ALLOW' && permission.Puede_Administrar === true
+    ),
+    true
+  );
+  assert.equal(
+    sheetRecords(f.sheets.get('CORE_ROL_MODULO')).every(module => module.Visible_Menu === true),
+    true
+  );
+  assert.equal(
+    f.run(`
+      aerpAuthorizeFromMetadata({
+        authentication: { token: 'trusted' },
+        companyId: 'tenant-A', moduleId: 'CLIENTES', action: 'VIEW',
+        context: { companyId: 'tenant-A' }
+      }, { trustedPrincipalVerifier: bootstrapTrustedVerifier }).decision
+    `),
+    'ALLOW'
+  );
 });
 
 test('operational controller completes the real secure runtime from clean preflight', () => {

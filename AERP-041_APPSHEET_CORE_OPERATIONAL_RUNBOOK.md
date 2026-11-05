@@ -10,7 +10,8 @@ The workflow does not change AERP-036/AERP-037 authorization. Menu visibility, n
 
 - The Apps Script project is bound to a new, isolated Google Sheets copy.
 - The bound spreadsheet is not the source/template spreadsheet.
-- The operator is a script editor and the intended initial Alef ERP administrator.
+- The intended initial Alef ERP administrator is the only editor of both the bound spreadsheet and its Apps Script project from configuration until the installation reaches `COMPLETE`.
+- The editor lists for the spreadsheet and script project have been reviewed, recorded as installation evidence and contain exactly that approved administrator. A coeditor must not be added during bootstrap.
 - The initial administrator e-mail has been approved before configuration and matches the verified Google OIDC e-mail exactly.
 - The OAuth scopes `openid` and `https://www.googleapis.com/auth/userinfo.email` are approved.
 - The AERP-040 blueprint and presentation manifest are the versioned release artifacts.
@@ -57,6 +58,7 @@ Expected result before AppSheet is configured:
 - 17 versioned tables exist with exact headers;
 - AERP-040 blueprint and presentation resources exist;
 - explicit initial administrative metadata exists;
+- only `ADMINISTRACION/ADMINISTER` is allowed while installation remains `INCOMPLETE`; every other commercial module is explicitly `DENY` and hidden;
 - installation state is `INCOMPLETE`;
 - normal ERP access remains denied until all checks pass.
 
@@ -138,6 +140,7 @@ The completion action:
 - renews confirmation only for the same claimed OIDC principal, tenant, target, plan and configuration;
 - immediately reapplies verification;
 - consumes the one-time bootstrap only after state becomes `COMPLETE`.
+- promotes the approved administrator's remaining commercial module permissions only after the durable state has reached `COMPLETE`.
 
 Expected final status:
 
@@ -156,7 +159,7 @@ Stop and investigate if any of these appears:
 - `OPERATIONAL_ATTESTATION_REJECTED`: the checklist, administrator authorization or stored evidence is invalid.
 - `persistence: UNKNOWN`: a storage response was ambiguous. Do not assume success; inspect status and retry only through the same menu workflow.
 
-Never replace a DENY with manual spreadsheet edits. Never copy confirmation evidence between spreadsheets or tenants. Never use the legacy **Generar ERP** command as an authorization bypass.
+Never replace a DENY with manual spreadsheet edits. Never copy confirmation evidence between spreadsheets or tenants. Never use the legacy **Generar ERP** command as an authorization bypass. If either editor list changes before `COMPLETE`, stop the installation and restart the governed bootstrap review from a clean isolated copy.
 
 ## Operational boundary
 

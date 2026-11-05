@@ -94,10 +94,24 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
   }
   function setState(target, status) {
     spreadsheet(target);
-    state();
+    const current = state();
     if (!['EMPTY', 'INCOMPLETE', 'COMPLETE'].includes(status)) fail();
     if (read('state') === null) write('state', JSON.stringify({ ...binding, status: 'EMPTY' }));
+    if (
+      status === 'INCOMPLETE' &&
+      current.status === 'COMPLETE' &&
+      activeMutation &&
+      bootstrapGrant
+    ) {
+      synchronizeBootstrapAccess('INCOMPLETE');
+    }
+    if (status === 'COMPLETE' && activeMutation && bootstrapGrant) {
+      synchronizeBootstrapAccess('COMPLETE', false);
+    }
     write('state', JSON.stringify({ ...binding, status }));
+    if (status === 'COMPLETE' && activeMutation && bootstrapGrant) {
+      synchronizeBootstrapAccess('COMPLETE');
+    }
     if (status === 'COMPLETE' && activeMutation && typeof config.consumeBootstrap === 'function') {
       if (
         config.consumeBootstrap({
@@ -301,8 +315,10 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
     );
   }
 
-  function bootstrapRecords() {
+  function bootstrapRecords(accessState) {
     if (!bootstrapGrant) return null;
+    const completed = (accessState || 'INCOMPLETE') === 'COMPLETE';
+    if (!['INCOMPLETE', 'COMPLETE'].includes(accessState || 'INCOMPLETE')) fail();
     const profile = bootstrapGrant.profile;
     const company = bootstrapGrant.company;
     const roleId = 'AERP_ADMIN';
@@ -365,31 +381,33 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
         }
       ],
       CORE_ROL_MODULO: modules.map(function (moduleId) {
+        const allowed = completed || moduleId === 'ADMINISTRACION';
         return {
           ID_Rol_Modulo: 'AERP_ADMIN_' + moduleId,
           ID_Empresa: binding.tenantId,
           ID_Rol: roleId,
           ID_Modulo: moduleId,
-          Visible_Menu: true,
+          Visible_Menu: allowed,
           Activo: true
         };
       }),
       CORE_PERMISOS: modules.map(function (moduleId) {
+        const allowed = completed || moduleId === 'ADMINISTRACION';
         return {
           ID_Permiso: 'AERP_ADMIN_' + moduleId,
           ID_Empresa: binding.tenantId,
           ID_Rol: roleId,
           ID_Modulo: moduleId,
-          Nivel_Acceso: 'ALLOW',
-          Puede_Ver: true,
-          Puede_Crear: true,
-          Puede_Editar: true,
-          Puede_Eliminar: true,
-          Puede_Aprobar: true,
-          Puede_Exportar: true,
-          Puede_Importar: true,
-          Puede_Imprimir: true,
-          Puede_Administrar: true,
+          Nivel_Acceso: allowed ? 'ALLOW' : 'DENY',
+          Puede_Ver: allowed,
+          Puede_Crear: allowed,
+          Puede_Editar: allowed,
+          Puede_Eliminar: allowed,
+          Puede_Aprobar: allowed,
+          Puede_Exportar: allowed,
+          Puede_Importar: allowed,
+          Puede_Imprimir: allowed,
+          Puede_Administrar: allowed,
           Activo: true
         };
       })
@@ -453,7 +471,7 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
   }
 
   function provisionBootstrapIfReady() {
-    const records = bootstrapRecords();
+    const records = bootstrapRecords('INCOMPLETE');
     if (!records) return;
     const book = spreadsheet(binding.boundTargetId);
     const tables = aerpBuildCommercialInstallerPlan().blueprint.tables;
@@ -515,6 +533,74 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
         tenantId: binding.tenantId
       })
     );
+  }
+  function synchronizeBootstrapAccess(accessState, shouldWrite) {
+    if (!locked || !activeMutation || !bootstrapGrant) fail();
+    const current = state();
+    if (
+      (accessState === 'COMPLETE' && !['INCOMPLETE', 'COMPLETE'].includes(current.status)) ||
+      (accessState === 'INCOMPLETE' && current.status !== 'COMPLETE')
+    )
+      fail();
+    const book = spreadsheet(binding.boundTargetId);
+    const tables = aerpBuildCommercialInstallerPlan().blueprint.tables;
+    const tableIndex = {};
+    tables.forEach(function (table) {
+      tableIndex[table.physicalName] = table;
+    });
+    const incomplete = bootstrapRecords('INCOMPLETE');
+    const complete = bootstrapRecords('COMPLETE');
+    const expected = accessState === 'COMPLETE' ? complete : incomplete;
+    for (const name of ['CORE_ROL_MODULO', 'CORE_PERMISOS']) {
+      const sheet = book.getSheetByName(name);
+      if (!sheet || read('owned:' + name) !== String(sheet.getSheetId())) fail();
+      const headers = tableIndex[name].columns.map(function (column) {
+        return column.Nombre_Campo;
+      });
+      if (
+        sheet.getLastColumn() !== headers.length ||
+        !same(sheet.getRange(1, 1, 1, headers.length).getValues()[0], headers)
+      )
+        fail();
+      const expectedRows = expected[name].map(function (record) {
+        return headers.map(function (header) {
+          return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : false;
+        });
+      });
+      const incompleteRows = incomplete[name].map(function (record) {
+        return headers.map(function (header) {
+          return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : false;
+        });
+      });
+      const completeRows = complete[name].map(function (record) {
+        return headers.map(function (header) {
+          return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : false;
+        });
+      });
+      const existingRows =
+        sheet.getLastRow() > 1
+          ? sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues()
+          : [];
+      if (
+        existingRows.length !== expectedRows.length ||
+        existingRows.some(function (row, index) {
+          return !same(row, incompleteRows[index]) && !same(row, completeRows[index]);
+        })
+      )
+        fail();
+      if (shouldWrite === false) continue;
+      try {
+        sheet.getRange(2, 1, expectedRows.length, headers.length).setValues(expectedRows);
+        SpreadsheetApp.flush();
+        if (
+          !same(sheet.getRange(2, 1, expectedRows.length, headers.length).getValues(), expectedRows)
+        )
+          fail();
+      } catch (_error) {
+        uncertain = true;
+        fail();
+      }
+    }
   }
   function security(snapshot) {
     const blueprint = snapshot.resources.find(item => item.kind === 'BLUEPRINT');

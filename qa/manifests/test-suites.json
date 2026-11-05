@@ -8,7 +8,7 @@
     "enforced": false
   },
   "reconciledBaseline": {
-    "total": 354,
+    "total": 358,
     "contractualThreshold": false,
     "perSuite": {
       "AERP-036_AuthorizationEngine.test.js": 20,
@@ -20,7 +20,7 @@
       "AERP-041_IsolatedInstallerEngine.test.js": 31,
       "AERP-041_InstallerIntegration.test.js": 14,
       "AERP-041_AppsScriptRuntimeAdapter.test.js": 35,
-      "AERP-041_OperationalController.test.js": 10
+      "AERP-041_OperationalController.test.js": 14
     }
   },
   "suites": [

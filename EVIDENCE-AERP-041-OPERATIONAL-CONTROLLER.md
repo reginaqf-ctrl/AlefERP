@@ -61,6 +61,16 @@ Planning now has a non-mutating preflight path for an `EMPTY` or installer-owned
 
 All values provisioned into the initial administrative rows are validated immediately before `setValues()`. Text beginning with spreadsheet formula markers, control characters, non-finite numbers and unsupported value types are rejected. OIDC identity and company text are also rejected earlier by the secure bootstrap, before confirmation evidence is written.
 
+### Staged administrative authorization
+
+Bootstrap authorization is now explicitly staged. While the durable installation state is `INCOMPLETE`, only the approved administrator's `ADMINISTRACION/ADMINISTER` permission is `ALLOW`; the other seven commercial modules have explicit `DENY` permissions and hidden menu assignments. After all structural, authorization and AppSheet Core checks pass, the adapter persists `COMPLETE`, promotes those exact installer-owned permission rows and only then consumes the one-time bootstrap.
+
+The promotion accepts only the deterministic installer-owned incomplete or complete row sets. Unexpected, duplicate or modified authorization rows fail closed. A failed completion attempt restores the restricted incomplete permission set before recording `INCOMPLETE` whenever durable storage remains available.
+
+### Production wiring regression coverage
+
+The Apps Script public adapter is exercised directly with missing properties, malformed JSON, extra keys and prototype-pollution keys. Tests also verify that the active bound spreadsheet supplies `targetId`, each of the three public menu handlers invokes only its assigned operational method and `onOpen()` registers the exact three AERP-041 commands.
+
 ### Menu and runbook
 
 The Alef ERP menu adds:
@@ -82,6 +92,9 @@ Operational inputs, AppSheet Core checks, expected states and failure handling a
 - Initial bootstrap remains one-time and limited to an empty isolated copy.
 - Read-only planning cannot claim bootstrap authority or mutate the target.
 - Initial bootstrap evidence can be issued only to the preapproved, verified administrator e-mail.
+- Only `ADMINISTRACION/ADMINISTER` is allowed before durable `COMPLETE`; all other commercial module permissions remain explicit `DENY`.
+- Full administrator permissions are promoted only after verification and a durable `COMPLETE` state.
+- The governed installation requires the approved administrator to remain the only spreadsheet and script editor until `COMPLETE`.
 - Formula-capable OIDC and company text is rejected before any sheet write.
 - Renewal cannot change principal, tenant, target, plan or company configuration.
 - A different OIDC subject is rejected.
@@ -98,8 +111,8 @@ Canonical runtime: Node `24.18.0`.
 
 | Check                             | Result                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------ |
-| Product suites                    | **354/354 PASS** across 10 declared suites                               |
-| Operational controller tests      | **10/10 PASS**                                                           |
+| Product suites                    | **358/358 PASS** across 10 declared suites                               |
+| Operational controller tests      | **14/14 PASS**                                                           |
 | Apps Script runtime/renewal tests | **35/35 PASS**                                                           |
 | ESLint                            | PASS, zero warnings                                                      |
 | Targeted Prettier                 | PASS                                                                     |
@@ -109,7 +122,7 @@ Canonical runtime: Node `24.18.0`.
 | Bundle Gate autotests             | **18/18 PASS**                                                           |
 | `git diff --check`                | PASS                                                                     |
 
-The test-gate autotest suite reports **41/42 PASS** in this restricted Windows host. Its sole failure is the pre-existing real `taskkill` process-tree test, because the host cannot confirm termination of a controlled descendant. All atomic evidence tests pass when their temporary directory is placed inside the authorized workspace. No product assertion or AERP-041 test failed, and the canonical ten-suite gate completed with exit code 0 and 354/354 tests.
+The test-gate autotest suite reports **41/42 PASS** in this restricted Windows host. Its sole failure is the pre-existing real `taskkill` process-tree test, because the host cannot confirm termination of a controlled descendant. All atomic evidence tests pass when their temporary directory is placed inside the authorized workspace. No product assertion or AERP-041 test failed, and the canonical ten-suite gate completed with exit code 0 and 358/358 tests.
 
 ## Files changed by this increment
 

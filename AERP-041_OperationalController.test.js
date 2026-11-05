@@ -169,6 +169,73 @@ function fixture(overrides = {}) {
   };
 }
 
+function appsScriptPublicFixture(configurationRaw) {
+  const calls = [];
+  const context = vm.createContext({ console });
+  context.PropertiesService = {
+    getScriptProperties: () => ({
+      getProperty(key) {
+        calls.push(['property', key]);
+        return key === 'AERP041_OPERATIONAL_CONFIG' ? configurationRaw : null;
+      }
+    })
+  };
+  context.SpreadsheetApp = {
+    getActiveSpreadsheet: () => ({ getId: () => 'target-1' })
+  };
+  context.aerpCreateSecureAppsScriptInstaller = configuration => {
+    calls.push(['create-secure-installer', configuration]);
+    return {
+      issueConfirmation() {
+        return { confirmationId: 'confirmation_1', nonce: 'nonce-1' };
+      },
+      renewConfirmation() {
+        return { confirmationId: 'confirmation_2', nonce: 'nonce-2' };
+      },
+      recordAppSheetCoreAttestation() {
+        return { ok: false, persistence: 'UNCHANGED' };
+      },
+      getAppSheetCoreReadiness() {
+        return { ok: false };
+      },
+      plan(request) {
+        calls.push(['plan', request]);
+        return { ok: true, state: 'CLEAN', operations: [] };
+      },
+      verify() {
+        return { ok: false, state: 'INCOMPLETE' };
+      },
+      apply() {
+        return { ok: false, state: 'INCOMPLETE', persistence: 'UNCHANGED' };
+      }
+    };
+  };
+  context.aerpConfirm = () => true;
+  context.aerpSuccess = (message, title) => calls.push(['success', title, message]);
+  context.aerpWarning = (message, title) => calls.push(['warning', title, message]);
+  context.aerpInfo = (message, title) => calls.push(['info', title, message]);
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, 'AERP-041_OperationalController.js'), 'utf8'),
+    context
+  );
+  return { calls, context, run: code => vm.runInContext(code, context) };
+}
+
+function validOperationalConfiguration() {
+  return {
+    sourceId: 'source-1',
+    tenantId: 'tenant-A',
+    expectedAudience: 'apps-script-client-id.apps.googleusercontent.com',
+    expectedAdminEmail: 'admin@example.test',
+    company: {
+      code: 'TENANT_A',
+      name: 'Empresa inicial',
+      currency: 'USD',
+      timeZone: 'Europe/Madrid'
+    }
+  };
+}
+
 test('clean start confirms the plan, issues ephemeral evidence and remains incomplete', () => {
   const f = fixture();
   const result = f.run('controller.start()');
@@ -393,5 +460,97 @@ test('missing dependencies and a clean completion request fail without mutation'
   assert.equal(
     clean.calls.some(call => call[0] === 'attest'),
     false
+  );
+});
+
+test('Apps Script production wiring rejects absent, malformed and hostile properties', () => {
+  const invalidProperties = [
+    null,
+    '{',
+    JSON.stringify({ ...validOperationalConfiguration(), extra: true }),
+    JSON.stringify({
+      ...validOperationalConfiguration(),
+      ['__proto__']: { grantsAuthorization: true }
+    })
+  ];
+  for (const raw of invalidProperties) {
+    const f = appsScriptPublicFixture(raw);
+    const result = f.run('aerpCreateAppsScriptOperationalInstallerController().preview()');
+    assert.equal(result.ok, false);
+    assert.equal(
+      f.calls.some(call => call[0] === 'create-secure-installer'),
+      false
+    );
+  }
+});
+
+test('Apps Script production wiring derives the bound target from the active spreadsheet', () => {
+  const f = appsScriptPublicFixture(JSON.stringify(validOperationalConfiguration()));
+  const result = f.run('aerpCreateAppsScriptOperationalInstallerController().preview()');
+  assert.equal(result.ok, true);
+  assert.equal(result.state, 'CLEAN');
+  const configuration = f.calls.find(call => call[0] === 'create-secure-installer')[1];
+  assert.equal(configuration.sourceId, 'source-1');
+  assert.equal(configuration.targetId, 'target-1');
+  assert.equal(configuration.tenantId, 'tenant-A');
+});
+
+test('Apps Script menu handlers invoke only their bounded operational action', () => {
+  const f = appsScriptPublicFixture(JSON.stringify(validOperationalConfiguration()));
+  f.run(`
+    var publicMenuCalls = [];
+    aerpCreateAppsScriptOperationalInstallerController = function () {
+      return {
+        start: function () {
+          publicMenuCalls.push('start');
+          return { ok: false, state: 'INCOMPLETE', code: 'START_PENDING' };
+        },
+        complete: function () {
+          publicMenuCalls.push('complete');
+          return { ok: true, state: 'COMPLETE', code: 'COMPLETE' };
+        },
+        status: function () {
+          publicMenuCalls.push('status');
+          return { ok: true, state: 'COMPLETE', code: 'STATUS' };
+        }
+      };
+    };
+  `);
+  assert.equal(f.run('menuAerp041SecureInstall().state'), 'INCOMPLETE');
+  assert.equal(f.run('menuAerp041CompleteAppSheetCore().state'), 'COMPLETE');
+  assert.equal(f.run('menuAerp041SecureStatus().state'), 'COMPLETE');
+  assert.deepEqual(Array.from(f.run('publicMenuCalls')), ['start', 'complete', 'status']);
+  assert.deepEqual(
+    f.calls.filter(call => ['warning', 'success', 'info'].includes(call[0])).map(call => call[0]),
+    ['warning', 'success', 'info']
+  );
+});
+
+test('main menu registers all three AERP-041 operational entries', () => {
+  const items = [];
+  const builder = {
+    addItem(label, handler) {
+      items.push([label, handler]);
+      return this;
+    },
+    addSeparator() {
+      return this;
+    },
+    addToUi() {
+      return this;
+    }
+  };
+  const context = vm.createContext({
+    SpreadsheetApp: { getUi: () => ({ createMenu: () => builder }) }
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '18_Menu.js'), 'utf8'), context);
+  vm.runInContext('onOpen()', context);
+  assert.deepEqual(
+    items.filter(item => item[1].startsWith('menuAerp041')),
+    [
+      ['Instalación segura', 'menuAerp041SecureInstall'],
+      ['Completar AppSheet Core', 'menuAerp041CompleteAppSheetCore'],
+      ['Estado instalación segura', 'menuAerp041SecureStatus']
+    ]
   );
 });
