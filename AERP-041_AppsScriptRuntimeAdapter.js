@@ -18,12 +18,21 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
   let principalProfile = null;
   let activeMutation = null;
   let bootstrapGrant = null;
+  let accessPromotionPending = false;
 
   function fail() {
     throw new Error('RUNTIME_REJECTED');
   }
   function same(a, b) {
     return JSON.stringify(a) === JSON.stringify(b);
+  }
+  function exactKeys(value, keys) {
+    return Boolean(
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      same(Object.keys(value).sort(), keys.slice().sort())
+    );
   }
   function opaque(value) {
     return typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
@@ -106,23 +115,48 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       synchronizeBootstrapAccess('INCOMPLETE');
     }
     if (status === 'COMPLETE' && activeMutation && bootstrapGrant) {
-      synchronizeBootstrapAccess('COMPLETE', false);
+      accessPromotionPending = true;
     }
-    write('state', JSON.stringify({ ...binding, status }));
+    if (activeMutation && bootstrapGrant && read('bootstrap:provisioned') === null) {
+      provisionBootstrapIfReady();
+    }
     if (status === 'COMPLETE' && activeMutation && bootstrapGrant) {
+      synchronizeBootstrapAccess('COMPLETE', false);
       synchronizeBootstrapAccess('COMPLETE');
     }
-    if (status === 'COMPLETE' && activeMutation && typeof config.consumeBootstrap === 'function') {
-      if (
-        config.consumeBootstrap({
-          confirmationId: activeMutation.confirmationId,
-          tenantId: binding.tenantId,
-          targetId: binding.boundTargetId
-        }) !== true
-      ) {
-        uncertain = true;
+    if (status === 'COMPLETE' && activeMutation && !bootstrapGrant) {
+      const lifecycle = bootstrapLifecycleStatus();
+      if (!['NOT_APPLICABLE', 'COMPLETE'].includes(lifecycle)) {
+        accessPromotionPending = true;
         fail();
       }
+    }
+    write('state', JSON.stringify({ ...binding, status }));
+    if (status === 'COMPLETE' && activeMutation && typeof config.consumeBootstrap === 'function') {
+      const lifecycle = bootstrapLifecycleStatus();
+      if (bootstrapGrant || lifecycle !== 'NOT_APPLICABLE') {
+        if (
+          !bootstrapGrant ||
+          config.consumeBootstrap({
+            confirmationId: activeMutation.confirmationId,
+            tenantId: binding.tenantId,
+            targetId: binding.boundTargetId
+          }) !== true
+        ) {
+          uncertain = true;
+          fail();
+        }
+        if (bootstrapLifecycleStatus() !== 'COMPLETE') {
+          uncertain = true;
+          fail();
+        }
+        accessPromotionPending = false;
+      }
+    }
+    const completedLifecycle = status === 'COMPLETE' ? bootstrapLifecycleStatus() : null;
+    if (status === 'COMPLETE' && !['NOT_APPLICABLE', 'COMPLETE'].includes(completedLifecycle)) {
+      accessPromotionPending = true;
+      fail();
     }
     return true;
   }
@@ -225,9 +259,26 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
     );
   }
 
-  function bootstrapTargetEligible() {
+  function bootstrapModules() {
+    return [
+      'ADMINISTRACION',
+      'CLIENTES',
+      'CONFIGURACION',
+      'INVENTARIO',
+      'PEDIDOS',
+      'PRODUCTOS',
+      'PROVEEDORES',
+      'VENTAS'
+    ];
+  }
+
+  function bootstrapTargetEligible(allowComplete) {
     const current = state();
-    if (!['EMPTY', 'INCOMPLETE'].includes(current.status)) return false;
+    if (
+      !['EMPTY', 'INCOMPLETE'].includes(current.status) &&
+      !(allowComplete === true && current.status === 'COMPLETE')
+    )
+      return false;
     const book = spreadsheet(binding.boundTargetId);
     const planned = new Set(
       aerpBuildCommercialInstallerPlan().blueprint.tables.map(function (table) {
@@ -243,10 +294,11 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
   }
 
   function claimBootstrap() {
+    const current = state();
     if (
       !activeMutation ||
       typeof config.claimBootstrap !== 'function' ||
-      !bootstrapTargetEligible()
+      !bootstrapTargetEligible(current.status === 'COMPLETE')
     )
       return false;
     const grant = config.claimBootstrap({
@@ -285,10 +337,11 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
   function bootstrapPreflightEligible() {
     if (activeMutation || typeof config.claimBootstrap !== 'function') return false;
     const current = state();
-    if (!bootstrapTargetEligible()) return false;
+    if (!bootstrapTargetEligible(current.status === 'COMPLETE')) return false;
     const claimRaw = read('bootstrap:claim');
     if (current.status === 'EMPTY') return claimRaw === null;
-    if (current.status !== 'INCOMPLETE' || !claimRaw || !principal) return false;
+    if (!['INCOMPLETE', 'COMPLETE'].includes(current.status) || !claimRaw || !principal)
+      return false;
     const claim = JSON.parse(claimRaw);
     if (
       !claim ||
@@ -317,21 +370,11 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
 
   function bootstrapRecords(accessState) {
     if (!bootstrapGrant) return null;
-    const completed = (accessState || 'INCOMPLETE') === 'COMPLETE';
     if (!['INCOMPLETE', 'COMPLETE'].includes(accessState || 'INCOMPLETE')) fail();
     const profile = bootstrapGrant.profile;
     const company = bootstrapGrant.company;
     const roleId = 'AERP_ADMIN';
-    const modules = [
-      'ADMINISTRACION',
-      'CLIENTES',
-      'CONFIGURACION',
-      'INVENTARIO',
-      'PEDIDOS',
-      'PRODUCTOS',
-      'PROVEEDORES',
-      'VENTAS'
-    ];
+    const modules = bootstrapModules();
     const records = {
       CORE_EMPRESAS: [
         {
@@ -380,23 +423,42 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
           Activo: true
         }
       ],
-      CORE_ROL_MODULO: modules.map(function (moduleId) {
+      ...bootstrapAccessRecords(accessState || 'INCOMPLETE')
+    };
+    if (
+      Object.values(records).some(function (rows) {
+        return rows.some(function (record) {
+          return Object.values(record).some(function (value) {
+            return !safeBootstrapCellValue(value);
+          });
+        });
+      })
+    )
+      fail();
+    return records;
+  }
+
+  function bootstrapAccessRecords(accessState) {
+    const completed = accessState === 'COMPLETE';
+    if (!['INCOMPLETE', 'COMPLETE'].includes(accessState)) fail();
+    return {
+      CORE_ROL_MODULO: bootstrapModules().map(function (moduleId) {
         const allowed = completed || moduleId === 'ADMINISTRACION';
         return {
           ID_Rol_Modulo: 'AERP_ADMIN_' + moduleId,
           ID_Empresa: binding.tenantId,
-          ID_Rol: roleId,
+          ID_Rol: 'AERP_ADMIN',
           ID_Modulo: moduleId,
           Visible_Menu: allowed,
           Activo: true
         };
       }),
-      CORE_PERMISOS: modules.map(function (moduleId) {
+      CORE_PERMISOS: bootstrapModules().map(function (moduleId) {
         const allowed = completed || moduleId === 'ADMINISTRACION';
         return {
           ID_Permiso: 'AERP_ADMIN_' + moduleId,
           ID_Empresa: binding.tenantId,
-          ID_Rol: roleId,
+          ID_Rol: 'AERP_ADMIN',
           ID_Modulo: moduleId,
           Nivel_Acceso: allowed ? 'ALLOW' : 'DENY',
           Puede_Ver: allowed,
@@ -412,17 +474,124 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
         };
       })
     };
-    if (
-      Object.values(records).some(function (rows) {
-        return rows.some(function (record) {
-          return Object.values(record).some(function (value) {
-            return !safeBootstrapCellValue(value);
-          });
+  }
+
+  function bootstrapAccessStatus() {
+    const book = spreadsheet(binding.boundTargetId);
+    const tableIndex = {};
+    aerpBuildCommercialInstallerPlan().blueprint.tables.forEach(function (table) {
+      tableIndex[table.physicalName] = table;
+    });
+    const incomplete = bootstrapAccessRecords('INCOMPLETE');
+    const complete = bootstrapAccessRecords('COMPLETE');
+    let incompleteFound = false;
+    for (const name of ['CORE_ROL_MODULO', 'CORE_PERMISOS']) {
+      const sheet = book.getSheetByName(name);
+      if (!sheet || read('owned:' + name) !== String(sheet.getSheetId())) return 'INVALID';
+      const headers = tableIndex[name].columns.map(function (column) {
+        return column.Nombre_Campo;
+      });
+      if (
+        sheet.getLastColumn() !== headers.length ||
+        !same(sheet.getRange(1, 1, 1, headers.length).getValues()[0], headers)
+      )
+        return 'INVALID';
+      const existingRows =
+        sheet.getLastRow() > 1
+          ? sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues()
+          : [];
+      const incompleteRows = incomplete[name].map(function (record) {
+        return headers.map(function (header) {
+          return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : false;
         });
-      })
+      });
+      const completeRows = complete[name].map(function (record) {
+        return headers.map(function (header) {
+          return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : false;
+        });
+      });
+      if (existingRows.length !== completeRows.length) return 'INVALID';
+      for (let index = 0; index < existingRows.length; index += 1) {
+        if (same(existingRows[index], completeRows[index])) continue;
+        if (!same(existingRows[index], incompleteRows[index])) return 'INVALID';
+        incompleteFound = true;
+      }
+    }
+    return incompleteFound ? 'RECOVERABLE' : 'COMPLETE';
+  }
+
+  function bootstrapLifecycleStatus() {
+    const provisionedRaw = read('bootstrap:provisioned');
+    const claimRaw = read('bootstrap:claim');
+    if (provisionedRaw === null && claimRaw === null) return 'NOT_APPLICABLE';
+    if (!provisionedRaw || !claimRaw) return 'INVALID';
+    let provisioned;
+    let claim;
+    let confirmation;
+    try {
+      provisioned = JSON.parse(provisionedRaw);
+      claim = JSON.parse(claimRaw);
+      confirmation = JSON.parse(read('bootstrap:confirmation:' + claim.confirmationId) || 'null');
+    } catch (_error) {
+      return 'INVALID';
+    }
+    if (
+      !provisioned ||
+      !claim ||
+      !confirmation ||
+      !exactKeys(provisioned, ['confirmationId', 'subjectId', 'tenantId']) ||
+      !exactKeys(claim, ['version', 'status', 'confirmationId', 'subjectId', 'tenantId']) ||
+      !exactKeys(confirmation, [
+        'version',
+        'confirmationId',
+        'status',
+        'intent',
+        'sourceId',
+        'targetId',
+        'tenantId',
+        'issuer',
+        'subjectId',
+        'planDigest',
+        'configurationDigest',
+        'nonceDigest',
+        'expiresAt'
+      ]) ||
+      claim.version !== 1 ||
+      confirmation.version !== 1 ||
+      confirmation.intent !== 'APPLY' ||
+      confirmation.sourceId !== binding.sourceId ||
+      confirmation.targetId !== binding.boundTargetId ||
+      provisioned.tenantId !== binding.tenantId ||
+      claim.tenantId !== binding.tenantId ||
+      confirmation.tenantId !== binding.tenantId ||
+      provisioned.subjectId !== claim.subjectId ||
+      confirmation.subjectId !== claim.subjectId ||
+      !opaque(provisioned.confirmationId) ||
+      !opaque(provisioned.subjectId) ||
+      confirmation.confirmationId !== claim.confirmationId ||
+      !opaque(claim.confirmationId) ||
+      !opaque(claim.subjectId) ||
+      typeof confirmation.issuer !== 'string' ||
+      confirmation.issuer.length < 1 ||
+      confirmation.issuer.length > 128 ||
+      !/^[a-f0-9]{64}$/.test(confirmation.planDigest || '') ||
+      !/^[a-f0-9]{64}$/.test(confirmation.configurationDigest || '') ||
+      !/^[a-f0-9]{64}$/.test(confirmation.nonceDigest || '') ||
+      !Number.isFinite(confirmation.expiresAt) ||
+      !['CLAIMED', 'CONSUMED'].includes(claim.status) ||
+      !['CLAIMED', 'CONSUMED'].includes(confirmation.status)
     )
-      fail();
-    return records;
+      return 'INVALID';
+    const access = bootstrapAccessStatus();
+    if (claim.status === 'CONSUMED' && confirmation.status === 'CONSUMED' && access === 'COMPLETE')
+      return 'COMPLETE';
+    if (
+      claim.status === 'CLAIMED' &&
+      ['CLAIMED', 'CONSUMED'].includes(confirmation.status) &&
+      ['RECOVERABLE', 'COMPLETE'].includes(access)
+    )
+      return 'RECOVERABLE';
+    return 'INVALID';
   }
 
   function bootstrapOwnedDataEligible() {
@@ -457,16 +626,24 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
           sheet.getLastRow() > 1
             ? sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues()
             : [];
-        return (
-          existingRows.length <= expectedRows.length &&
-          existingRows.every(function (row) {
+        if (existingRows.length > expectedRows.length) return false;
+        if (!['CORE_ROL_MODULO', 'CORE_PERMISOS'].includes(name)) {
+          return existingRows.every(function (row) {
             return (
               expectedRows.filter(function (expected) {
                 return same(expected, row);
               }).length === 1
             );
-          })
-        );
+          });
+        }
+        const completeRows = bootstrapAccessRecords('COMPLETE')[name].map(function (record) {
+          return headers.map(function (header) {
+            return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : false;
+          });
+        });
+        return existingRows.every(function (row, index) {
+          return same(row, expectedRows[index]) || same(row, completeRows[index]);
+        });
       });
   }
 
@@ -499,16 +676,29 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
           return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : false;
         });
       });
+      const completeRows = ['CORE_ROL_MODULO', 'CORE_PERMISOS'].includes(name)
+        ? bootstrapAccessRecords('COMPLETE')[name].map(function (record) {
+            return headers.map(function (header) {
+              return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : false;
+            });
+          })
+        : null;
       const existingRows =
         sheet.getLastRow() > 1
           ? sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues()
           : [];
-      expectedRows.forEach(function (row) {
+      expectedRows.forEach(function (row, expectedIndex) {
         const keyIndex = headers.indexOf(key);
         const matches = existingRows.filter(function (existing) {
           return existing[keyIndex] === row[keyIndex];
         });
-        if (matches.length > 1 || (matches.length === 1 && !same(matches[0], row))) fail();
+        if (
+          matches.length > 1 ||
+          (matches.length === 1 &&
+            !same(matches[0], row) &&
+            (!completeRows || !same(matches[0], completeRows[expectedIndex])))
+        )
+          fail();
         if (matches.length === 0) {
           const rowIndex = sheet.getLastRow() + 1;
           try {
@@ -613,6 +803,10 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
         true
     );
     const admin = adminAllowed();
+    const lifecycle = bootstrapLifecycleStatus();
+    const bootstrapValidated =
+      lifecycle !== 'INVALID' &&
+      (snapshot.status !== 'COMPLETE' || ['NOT_APPLICABLE', 'COMPLETE'].includes(lifecycle));
     const application =
       typeof config.validateApplication === 'function'
         ? config.validateApplication(aerpInstallerDeepFreeze_(JSON.parse(JSON.stringify(snapshot))))
@@ -622,8 +816,8 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       denyPrecedence: true,
       visibilityGrantsAuthorization: false,
       tenantIsolation: true,
-      authorizationValidated: admin,
-      adminAccessValidated: admin,
+      authorizationValidated: admin && bootstrapValidated,
+      adminAccessValidated: admin && bootstrapValidated,
       metadataValidated,
       applicationValidated: Boolean(
         application &&
@@ -754,7 +948,16 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       // Recheck identity and metadata under the same lock as the mutation.
       if (!verifyIdentity(authentication)) fail();
       const metadataAdmin = adminAllowed();
-      if (typeof config.claimBootstrap === 'function' && state().status !== 'COMPLETE') {
+      const current = state();
+      const lifecycle = bootstrapLifecycleStatus();
+      if (activeMutation && current.status === 'COMPLETE' && lifecycle === 'INVALID') {
+        accessPromotionPending = true;
+        fail();
+      }
+      if (
+        typeof config.claimBootstrap === 'function' &&
+        (current.status !== 'COMPLETE' || lifecycle === 'RECOVERABLE')
+      ) {
         if (activeMutation) {
           if (!claimBootstrap()) fail();
         } else if (!bootstrapPreflightEligible()) fail();
@@ -773,6 +976,7 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
   const adapter = { withExclusiveTarget, readSnapshot, setState, appendJournal, createIfAbsent };
   function invoke(method, request) {
     uncertain = false;
+    accessPromotionPending = false;
     authentication = null;
     principal = null;
     try {
@@ -824,6 +1028,15 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
         }
       });
       const result = coordinator[method](request);
+      if (method === 'apply' && accessPromotionPending) {
+        return {
+          ...result,
+          ok: false,
+          state: 'INCOMPLETE',
+          code: 'ACCESS_PROMOTION_INCOMPLETE',
+          persistence: uncertain ? 'UNKNOWN' : result.persistence
+        };
+      }
       return uncertain && method !== 'canAccess'
         ? { ...result, ok: false, state: 'INCOMPLETE', persistence: 'UNKNOWN' }
         : result;
@@ -843,6 +1056,7 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       principalProfile = null;
       activeMutation = null;
       bootstrapGrant = null;
+      accessPromotionPending = false;
     }
   }
   return Object.freeze({

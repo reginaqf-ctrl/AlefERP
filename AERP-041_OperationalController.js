@@ -205,7 +205,31 @@ function aerpCreateOperationalInstallerController(dependencies) {
     };
   }
 
-  function sanitizeMutation(result) {
+  function completionValidated(context) {
+    const readiness = context.installer.getAppSheetCoreReadiness();
+    const verification = context.installer.verify(context.request);
+    return Boolean(
+      readiness &&
+      readiness.ok === true &&
+      verification &&
+      verification.ok === true &&
+      verification.verified === true &&
+      verification.state === 'COMPLETE'
+    );
+  }
+
+  function completeResponse(context) {
+    if (!completionValidated(context)) return denied('ACCESS_PROMOTION_INCOMPLETE');
+    return freeze({
+      ok: true,
+      state: 'COMPLETE',
+      code: 'OPERATIONAL_INSTALLATION_COMPLETE',
+      persistence: 'UNCHANGED',
+      created: 0
+    });
+  }
+
+  function sanitizeMutation(result, context) {
     if (!result || typeof result !== 'object') {
       return denied('OPERATIONAL_INSTALLATION_REJECTED');
     }
@@ -215,6 +239,12 @@ function aerpCreateOperationalInstallerController(dependencies) {
     const persistence = ['CONFIRMED', 'UNCHANGED', 'UNKNOWN'].includes(result.persistence)
       ? result.persistence
       : 'UNCHANGED';
+    if (result.code === 'ACCESS_PROMOTION_INCOMPLETE') {
+      return denied('ACCESS_PROMOTION_INCOMPLETE', persistence);
+    }
+    if (result.ok === true && state === 'COMPLETE' && !completionValidated(context)) {
+      return denied('ACCESS_PROMOTION_INCOMPLETE', 'UNKNOWN');
+    }
     const response = {
       ok: result.ok === true && state === 'COMPLETE',
       state: state,
@@ -242,13 +272,7 @@ function aerpCreateOperationalInstallerController(dependencies) {
     try {
       const context = planContext();
       if (context.summary.state === 'COMPLETE') {
-        return freeze({
-          ok: true,
-          state: 'COMPLETE',
-          code: 'OPERATIONAL_INSTALLATION_COMPLETE',
-          persistence: 'UNCHANGED',
-          created: 0
-        });
+        return completeResponse(context);
       }
       if (dependencies.confirmPlan(context.summary) !== true) {
         return denied('OPERATIONAL_USER_CANCELLED');
@@ -267,7 +291,8 @@ function aerpCreateOperationalInstallerController(dependencies) {
       return sanitizeMutation(
         context.installer.apply(
           freeze(Object.assign({}, context.request, { confirmation: copy(confirmation) }))
-        )
+        ),
+        context
       );
     } catch (_error) {
       return denied('OPERATIONAL_INSTALLATION_REJECTED');
@@ -359,13 +384,7 @@ function aerpCreateOperationalInstallerController(dependencies) {
     try {
       const context = planContext();
       if (context.summary.state === 'COMPLETE') {
-        return freeze({
-          ok: true,
-          state: 'COMPLETE',
-          code: 'OPERATIONAL_INSTALLATION_COMPLETE',
-          persistence: 'UNCHANGED',
-          created: 0
-        });
+        return completeResponse(context);
       }
       if (context.summary.state !== 'PARTIAL') {
         return denied('OPERATIONAL_INSTALLATION_NOT_STARTED');
@@ -400,7 +419,8 @@ function aerpCreateOperationalInstallerController(dependencies) {
       return sanitizeMutation(
         context.installer.apply(
           freeze(Object.assign({}, context.request, { confirmation: copy(confirmation) }))
-        )
+        ),
+        context
       );
     } catch (_error) {
       return denied('OPERATIONAL_COMPLETION_REJECTED');
@@ -412,17 +432,21 @@ function aerpCreateOperationalInstallerController(dependencies) {
       const context = planContext();
       const readiness = context.installer.getAppSheetCoreReadiness();
       const verification = context.installer.verify(context.request);
+      const verified = Boolean(
+        verification &&
+        verification.ok === true &&
+        verification.verified === true &&
+        verification.state === 'COMPLETE'
+      );
+      const complete = Boolean(
+        context.summary.state === 'COMPLETE' && readiness && readiness.ok === true && verified
+      );
       return freeze({
         ok: true,
-        state: context.summary.state,
+        state: complete ? 'COMPLETE' : 'INCOMPLETE',
         operations: context.summary.operations,
         appSheetReady: Boolean(readiness && readiness.ok === true),
-        verified: Boolean(
-          verification &&
-          verification.ok === true &&
-          verification.verified === true &&
-          verification.state === 'COMPLETE'
-        ),
+        verified: verified,
         persistence: 'UNCHANGED'
       });
     } catch (_error) {

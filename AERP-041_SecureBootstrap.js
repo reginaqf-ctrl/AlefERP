@@ -278,7 +278,7 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
       const currentState = stateRaw ? JSON.parse(stateRaw) : null;
       if (
         !currentState ||
-        currentState.status !== 'INCOMPLETE' ||
+        !['INCOMPLETE', 'COMPLETE'].includes(currentState.status) ||
         currentState.sourceId !== binding.sourceId ||
         currentState.boundTargetId !== binding.targetId ||
         currentState.tenantId !== binding.tenantId
@@ -296,7 +296,7 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
         claim.status !== 'CLAIMED' ||
         claim.subjectId !== identity.subjectId ||
         claim.tenantId !== binding.tenantId ||
-        prior.status !== 'CLAIMED' ||
+        !['CLAIMED', 'CONSUMED'].includes(prior.status) ||
         prior.intent !== 'APPLY' ||
         prior.sourceId !== binding.sourceId ||
         prior.targetId !== binding.targetId ||
@@ -468,17 +468,44 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
       if (!raw) fail();
       const claim = JSON.parse(raw);
       if (
+        claim.version !== 1 ||
         claim.status !== 'CLAIMED' ||
         claim.confirmationId !== source.confirmationId ||
-        claim.tenantId !== binding.tenantId
+        claim.tenantId !== binding.tenantId ||
+        source.tenantId !== binding.tenantId ||
+        source.targetId !== binding.targetId
       )
         fail();
       const record = readRecord(claim.confirmationId);
-      record.status = 'CONSUMED';
-      writeRecord(record);
-      claim.status = 'CONSUMED';
-      store.setProperty(claimKey, JSON.stringify(claim));
-      return true;
+      if (
+        !['CLAIMED', 'CONSUMED'].includes(record.status) ||
+        record.confirmationId !== claim.confirmationId ||
+        record.sourceId !== binding.sourceId ||
+        record.targetId !== binding.targetId ||
+        record.tenantId !== binding.tenantId ||
+        record.subjectId !== claim.subjectId ||
+        record.planDigest !== planDigest() ||
+        record.configurationDigest !== configurationDigest()
+      )
+        fail();
+      const consumedRecord = Object.assign({}, record, { status: 'CONSUMED' });
+      const consumedClaim = Object.assign({}, claim, { status: 'CONSUMED' });
+      try {
+        writeRecord(consumedRecord);
+      } catch (_error) {
+        if (JSON.stringify(readRecord(claim.confirmationId)) !== JSON.stringify(consumedRecord)) {
+          fail();
+        }
+      }
+      try {
+        store.setProperty(claimKey, JSON.stringify(consumedClaim));
+      } catch (_error) {
+        if (store.getProperty(claimKey) !== JSON.stringify(consumedClaim)) fail();
+      }
+      return Boolean(
+        JSON.stringify(readRecord(claim.confirmationId)) === JSON.stringify(consumedRecord) &&
+        store.getProperty(claimKey) === JSON.stringify(consumedClaim)
+      );
     } catch (_error) {
       return false;
     }

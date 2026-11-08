@@ -9,7 +9,14 @@ const crypto = require('node:crypto');
 function fixture() {
   const properties = new Map();
   const sheets = new Map();
-  const control = { locked: false, busy: false, failStorage: false, writes: 0 };
+  const control = {
+    locked: false,
+    busy: false,
+    failStorage: false,
+    writes: 0,
+    flushes: 0,
+    lastWrittenSheet: null
+  };
   let nextSheetId = 1;
   function sheet(name, rows = []) {
     const sheetId = nextSheetId++;
@@ -19,17 +26,29 @@ function fixture() {
       getLastRow: () => rows.length,
       getLastColumn: () => rows[0]?.length || 0,
       getRange: (r, c, height, width) => ({
-        getValues: () =>
-          Array.from({ length: height }, (_, i) =>
+        getValues: () => {
+          const values = Array.from({ length: height }, (_, i) =>
             Array.from({ length: width }, (_, j) => rows[r - 1 + i]?.[c - 1 + j] ?? '')
-          ),
+          );
+          if (
+            control.corruptReadbackSheet === name &&
+            control.lastWrittenSheet === name &&
+            r === 2
+          ) {
+            control.corruptReadbackSheet = null;
+            values[0][0] = 'CORRUPTED_READBACK';
+          }
+          return values;
+        },
         setValues(values) {
           assert.equal(control.locked, true);
           if (control.failHeaders) throw Error('header write failure');
+          if (control.failSheetWrite === name && r >= 2) throw Error('selected sheet failure');
           control.writes++;
           values.forEach((row, i) => {
             rows[r - 1 + i] = [...row];
           });
+          control.lastWrittenSheet = name;
         }
       })
     };
@@ -74,7 +93,13 @@ function fixture() {
     getIdentityToken: () =>
       `header.${Buffer.from(JSON.stringify(oidcPayload)).toString('base64url')}.signature`
   };
-  context.SpreadsheetApp = { getActiveSpreadsheet: () => spreadsheet, flush() {} };
+  context.SpreadsheetApp = {
+    getActiveSpreadsheet: () => spreadsheet,
+    flush() {
+      control.flushes++;
+      if (control.failFlush) throw Error('flush failure');
+    }
+  };
   context.PropertiesService = {
     getDocumentProperties: () => ({
       getProperty: key => {
@@ -85,6 +110,12 @@ function fixture() {
         assert.equal(control.locked, true);
         if (control.failStorage) throw Error('secret storage detail');
         if (control.failKey && key.includes(control.failKey)) throw Error('selected write failure');
+        if (
+          control.failCompleteState &&
+          key.endsWith(':state') &&
+          JSON.parse(value).status === 'COMPLETE'
+        )
+          throw Error('complete state write failure');
         control.writes++;
         properties.set(key, value);
         if (control.ambiguousKey && key.includes(control.ambiguousKey))
@@ -234,6 +265,26 @@ function sheetRecords(sheet) {
     .map(row => Object.fromEntries(headers.map((header, index) => [header, row[index]])));
 }
 
+function prepareBootstrapCompletion(f) {
+  f.run(`
+    var clockMs = 2000000;
+    var secureInstaller = aerpCreateSecureAppsScriptInstaller({
+      sourceId: 'source-1', targetId: 'target-1', tenantId: 'tenant-A',
+      expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+      now: () => clockMs,
+      company: { code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid' },
+      validateApplication: () => ({ ok: true, errors: [] })
+    });
+    request.identity = { provider: 'GOOGLE_OIDC' };
+    request.confirmation = secureInstaller.issueConfirmation({ intent: 'APPLY' });
+  `);
+  assert.equal(f.run('secureInstaller.apply(request).state'), 'INCOMPLETE');
+  assert.equal(
+    f.run('secureInstaller.recordAppSheetCoreAttestation(appSheetCoreAttestation).ok'),
+    true
+  );
+}
+
 test('one-time OIDC bootstrap provisions explicit admin grants and waits for application', () => {
   const f = fixture();
   f.run(`
@@ -339,6 +390,146 @@ test('one-time OIDC bootstrap provisions explicit admin grants and waits for app
     `),
     'ALLOW'
   );
+});
+
+test('permission promotion failures stay incomplete and retry without duplicate grants', () => {
+  for (const [failureMode, inject] of [
+    ['permission-write', control => (control.failSheetWrite = 'CORE_PERMISOS')],
+    ['flush', control => (control.failFlush = true)],
+    ['readback', control => (control.corruptReadbackSheet = 'CORE_ROL_MODULO')]
+  ]) {
+    const f = fixture();
+    prepareBootstrapCompletion(f);
+    inject(f.control);
+    const failed = f.run('secureInstaller.apply(request)');
+    assert.equal(failed.ok, false);
+    assert.equal(failed.state, 'INCOMPLETE');
+    assert.equal(failed.code, 'ACCESS_PROMOTION_INCOMPLETE', failureMode);
+    assert.equal(failed.persistence, 'UNKNOWN');
+    assert.match(f.properties.get('AERP041:v1:state'), /INCOMPLETE/);
+    assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CLAIMED/);
+    assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+
+    f.control.failSheetWrite = null;
+    f.control.failFlush = false;
+    f.control.corruptReadbackSheet = null;
+    const retried = f.run('secureInstaller.apply(request)');
+    assert.equal(retried.ok, true);
+    assert.equal(retried.state, 'COMPLETE');
+    assert.equal(sheetRecords(f.sheets.get('CORE_PERMISOS')).length, 8);
+    assert.equal(sheetRecords(f.sheets.get('CORE_ROL_MODULO')).length, 8);
+    assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+  }
+});
+
+test('a failed COMPLETE state write cannot expose promoted permissions and is retryable', () => {
+  const f = fixture();
+  prepareBootstrapCompletion(f);
+  f.control.failCompleteState = true;
+  const failed = f.run('secureInstaller.apply(request)');
+  assert.equal(failed.ok, false);
+  assert.equal(failed.state, 'INCOMPLETE');
+  assert.equal(failed.code, 'ACCESS_PROMOTION_INCOMPLETE');
+  assert.equal(failed.persistence, 'UNKNOWN');
+  assert.match(f.properties.get('AERP041:v1:state'), /INCOMPLETE/);
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  assert.equal(
+    sheetRecords(f.sheets.get('CORE_PERMISOS')).every(row => row.Nivel_Acceso === 'ALLOW'),
+    true
+  );
+
+  f.control.failCompleteState = false;
+  const retried = f.run('secureInstaller.apply(request)');
+  assert.equal(retried.ok, true);
+  assert.equal(retried.state, 'COMPLETE');
+  assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+});
+
+test('bootstrap consumption failure remains fail-closed and renews the same installation', () => {
+  const f = fixture();
+  prepareBootstrapCompletion(f);
+  f.control.failKey = 'bootstrap:claim';
+  const failed = f.run('secureInstaller.apply(request)');
+  assert.equal(failed.ok, false);
+  assert.equal(failed.code, 'ACCESS_PROMOTION_INCOMPLETE');
+  assert.equal(failed.persistence, 'UNKNOWN');
+  assert.match(f.properties.get('AERP041:v1:state'), /INCOMPLETE/);
+  assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CLAIMED/);
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+
+  f.control.failKey = null;
+  f.run("request.confirmation = secureInstaller.renewConfirmation({ intent: 'APPLY' })");
+  const retried = f.run('secureInstaller.apply(request)');
+  assert.equal(retried.ok, true);
+  assert.equal(retried.state, 'COMPLETE');
+  assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+});
+
+test('legacy COMPLETE state with claimed partial access is recovered explicitly', () => {
+  const f = fixture();
+  prepareBootstrapCompletion(f);
+  f.properties.set(
+    'AERP041:v1:state',
+    JSON.stringify({
+      sourceId: 'source-1',
+      boundTargetId: 'target-1',
+      tenantId: 'tenant-A',
+      status: 'COMPLETE'
+    })
+  );
+  const plan = f.run('secureInstaller.plan(request)');
+  assert.equal(plan.ok, true);
+  assert.equal(plan.state, 'PARTIAL');
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+
+  f.run("request.confirmation = secureInstaller.renewConfirmation({ intent: 'APPLY' })");
+  const recovered = f.run('secureInstaller.apply(request)');
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.state, 'COMPLETE');
+  assert.equal(f.run('secureInstaller.canAccess(request)'), true);
+});
+
+test('duplicate, altered and foreign access rows fail closed without silent repair', () => {
+  for (const mutate of [
+    f => {
+      const sheet = f.sheets.get('CORE_PERMISOS');
+      const first = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getValues()[0];
+      f.control.locked = true;
+      sheet.getRange(sheet.getLastRow() + 1, 1, 1, first.length).setValues([first]);
+      f.control.locked = false;
+    },
+    f => {
+      const sheet = f.sheets.get('CORE_ROL_MODULO');
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const row = sheet.getRange(2, 1, 1, headers.length).getValues()[0];
+      row[headers.indexOf('Visible_Menu')] = 'ALTERED';
+      f.control.locked = true;
+      sheet.getRange(2, 1, 1, row.length).setValues([row]);
+      f.control.locked = false;
+    },
+    f => {
+      const sheet = f.sheets.get('CORE_PERMISOS');
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const row = sheet.getRange(2, 1, 1, headers.length).getValues()[0];
+      row[headers.indexOf('ID_Empresa')] = 'tenant-B';
+      f.control.locked = true;
+      sheet.getRange(2, 1, 1, row.length).setValues([row]);
+      f.control.locked = false;
+    }
+  ]) {
+    const f = fixture();
+    prepareBootstrapCompletion(f);
+    mutate(f);
+    const permissionsBefore = JSON.stringify(sheetRecords(f.sheets.get('CORE_PERMISOS')));
+    const roleModulesBefore = JSON.stringify(sheetRecords(f.sheets.get('CORE_ROL_MODULO')));
+    const rejected = f.run('secureInstaller.apply(request)');
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.state, 'INCOMPLETE');
+    assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+    assert.equal(JSON.stringify(sheetRecords(f.sheets.get('CORE_PERMISOS'))), permissionsBefore);
+    assert.equal(JSON.stringify(sheetRecords(f.sheets.get('CORE_ROL_MODULO'))), roleModulesBefore);
+    assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CLAIMED/);
+  }
 });
 
 test('operational controller completes the real secure runtime from clean preflight', () => {

@@ -367,7 +367,9 @@ test('completion records attestation, renews evidence and reaches complete', () 
   const f = fixture({
     planState: 'PARTIAL',
     planOperations: 0,
-    applyResult: { ok: true, state: 'COMPLETE', persistence: 'CONFIRMED', created: 0 }
+    applyResult: { ok: true, state: 'COMPLETE', persistence: 'CONFIRMED', created: 0 },
+    readiness: { ok: true },
+    verification: { ok: true, state: 'COMPLETE', verified: true }
   });
   const result = f.run('controller.complete()');
   assert.equal(result.ok, true);
@@ -379,6 +381,54 @@ test('completion records attestation, renews evidence and reaches complete', () 
     ['confirm-completion', 'attest', 'renew', 'apply']
   );
   assert.equal(JSON.stringify(result).includes('evidenceDigest'), false);
+});
+
+test('completion never trusts a COMPLETE result without readiness and verified access', () => {
+  const appliedButUnverified = fixture({
+    planState: 'PARTIAL',
+    planOperations: 0,
+    applyResult: { ok: true, state: 'COMPLETE', persistence: 'CONFIRMED', created: 0 },
+    readiness: { ok: true },
+    verification: { ok: false, state: 'INCOMPLETE', verified: false }
+  });
+  const appliedResult = appliedButUnverified.run('controller.complete()');
+  assert.equal(appliedResult.ok, false);
+  assert.equal(appliedResult.state, 'INCOMPLETE');
+  assert.equal(appliedResult.code, 'ACCESS_PROMOTION_INCOMPLETE');
+  assert.equal(appliedResult.persistence, 'UNKNOWN');
+
+  const durableButUnverified = fixture({
+    planState: 'COMPLETE',
+    planOperations: 0,
+    readiness: { ok: true },
+    verification: { ok: false, state: 'INCOMPLETE', verified: false }
+  });
+  const durableResult = durableButUnverified.run('controller.complete()');
+  assert.equal(durableResult.ok, false);
+  assert.equal(durableResult.state, 'INCOMPLETE');
+  assert.equal(durableResult.code, 'ACCESS_PROMOTION_INCOMPLETE');
+  assert.equal(
+    durableButUnverified.calls.some(call => call[0] === 'attest'),
+    false
+  );
+});
+
+test('access-promotion failures remain explicit and never become commercial success', () => {
+  const f = fixture({
+    planState: 'PARTIAL',
+    planOperations: 0,
+    applyResult: {
+      ok: false,
+      state: 'INCOMPLETE',
+      code: 'ACCESS_PROMOTION_INCOMPLETE',
+      persistence: 'UNKNOWN'
+    }
+  });
+  const result = f.run('controller.complete()');
+  assert.equal(result.ok, false);
+  assert.equal(result.state, 'INCOMPLETE');
+  assert.equal(result.code, 'ACCESS_PROMOTION_INCOMPLETE');
+  assert.equal(result.persistence, 'UNKNOWN');
 });
 
 test('rejected or ambiguous attestation blocks renewal and final apply', () => {
