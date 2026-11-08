@@ -3,8 +3,10 @@
   "dependencies": {},
   "exceptionLogging": "STACKDRIVER",
   "oauthScopes": [
+    "openid",
     "https://www.googleapis.com/auth/script.container.ui",
-    "https://www.googleapis.com/auth/spreadsheets.currentonly"
+    "https://www.googleapis.com/auth/spreadsheets.currentonly",
+    "https://www.googleapis.com/auth/userinfo.email"
   ],
   "runtimeVersion": "V8"
 }
