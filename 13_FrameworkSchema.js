@@ -43,11 +43,7 @@ function aerpBuildFrameworkSchema() {
       columns: []
     };
 
-    const columns = aerpGetColumnsForTable_(
-      columnasData.headers,
-      columnasData.rows,
-      tableName
-    );
+    const columns = aerpGetColumnsForTable_(columnasData.headers, columnasData.rows, tableName);
 
     tableSchema.columns = columns;
 
@@ -61,7 +57,7 @@ function aerpBuildFrameworkSchema() {
   });
 
   schema.summary.tables = schema.tables.length;
-  schema.summary.columns = schema.tables.reduce(function(total, table) {
+  schema.summary.columns = schema.tables.reduce(function (total, table) {
     return total + table.columns.length;
   }, 0);
   schema.summary.durationMs = new Date() - start;
@@ -79,7 +75,7 @@ function aerpGetColumnsForTable_(headers, rows, tableName) {
   return rows
     .filter(row => String(row[idxTabla] || '').trim() === String(tableName).trim())
     .map(row => aerpRowToObject(headers, row))
-    .sort(function(a, b) {
+    .sort(function (a, b) {
       return Number(a.Orden || 999) - Number(b.Orden || 999);
     });
 }
@@ -96,7 +92,7 @@ function aerpValidateFrameworkSchema(schema) {
     errors.push('El schema no contiene tablas.');
   }
 
-  schema.tables.forEach(function(table) {
+  schema.tables.forEach(function (table) {
     if (!table.physicalName) {
       errors.push('Tabla sin physicalName: ' + table.code);
     }
@@ -105,7 +101,7 @@ function aerpValidateFrameworkSchema(schema) {
       warnings.push('Tabla sin columnas: ' + table.physicalName);
     }
 
-    const keys = table.columns.filter(function(col) {
+    const keys = table.columns.filter(function (col) {
       return col.Es_Key === true || String(col.Es_Key).toUpperCase() === 'TRUE';
     });
 
@@ -134,14 +130,20 @@ function testFrameworkSchema() {
   const schema = aerpBuildFrameworkSchema();
   const validation = aerpValidateFrameworkSchema(schema);
 
-  Logger.log(JSON.stringify({
-    ok: validation.ok,
-    tables: schema.summary.tables,
-    columns: schema.summary.columns,
-    errors: validation.errors,
-    warnings: validation.warnings,
-    durationMs: schema.summary.durationMs
-  }, null, 2));
+  Logger.log(
+    JSON.stringify(
+      {
+        ok: validation.ok,
+        tables: schema.summary.tables,
+        columns: schema.summary.columns,
+        errors: validation.errors,
+        warnings: validation.warnings,
+        durationMs: schema.summary.durationMs
+      },
+      null,
+      2
+    )
+  );
 
   if (!validation.ok) {
     throw new Error('Framework Schema inválido. Revisa el log.');
@@ -149,4 +151,3 @@ function testFrameworkSchema() {
 
   Logger.log('Framework Schema OK');
 }
-

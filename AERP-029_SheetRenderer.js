@@ -23,14 +23,12 @@
  * ============================================================
  */
 
-
 /* ============================================================
  * 1. MODULE CONSTANTS
  * ============================================================
  */
 
 const AERP_SHEET_RENDERER_VERSION = '1.0.0';
-
 
 /**
  * Registered renderer handlers.
@@ -47,7 +45,6 @@ const AERP_SHEET_RENDERER_VERSION = '1.0.0';
 const AERP_SHEET_RENDERERS = {
   'card.kpi': aerpRenderKpiCard_
 };
-
 
 /* ============================================================
  * 2. PUBLIC API
@@ -82,46 +79,23 @@ const AERP_SHEET_RENDERERS = {
  * @param {Object=} options Rendering overrides.
  * @return {*} Rendered range.
  */
-function aerpRenderComponent(
-  sheet,
-  rangeA1,
-  component,
-  options
-) {
+function aerpRenderComponent(sheet, rangeA1, component, options) {
   aerpRendererRequireSheet_(sheet);
 
-  const normalizedRange =
-    aerpRendererNormalizeRange_(rangeA1);
+  const normalizedRange = aerpRendererNormalizeRange_(rangeA1);
 
-  const validation =
-    aerpValidateRenderableComponent(
-      component
-    );
+  const validation = aerpValidateRenderableComponent(component);
 
   if (!validation.ok) {
-    throw new Error(
-      '[AERP-029] Invalid renderable component: ' +
-      validation.errors.join(' | ')
-    );
+    throw new Error('[AERP-029] Invalid renderable component: ' + validation.errors.join(' | '));
   }
 
-  const rendererKey =
-    component.component +
-    '.' +
-    component.variant;
+  const rendererKey = component.component + '.' + component.variant;
 
-  const renderer =
-    AERP_SHEET_RENDERERS[
-      rendererKey
-    ];
+  const renderer = AERP_SHEET_RENDERERS[rendererKey];
 
-  if (
-    typeof renderer !== 'function'
-  ) {
-    throw new Error(
-      '[AERP-029] Renderer not registered: ' +
-      rendererKey
-    );
+  if (typeof renderer !== 'function') {
+    throw new Error('[AERP-029] Renderer not registered: ' + rendererKey);
   }
 
   const renderContext = {
@@ -134,16 +108,12 @@ function aerpRenderComponent(
     options: options || {}
   };
 
-  const renderedRange =
-    renderer(
-      renderContext
-    );
+  const renderedRange = renderer(renderContext);
 
   SpreadsheetApp.flush();
 
   return renderedRange;
 }
-
 
 /**
  * Validates whether a component can be rendered.
@@ -151,19 +121,11 @@ function aerpRenderComponent(
  * @param {Object} component Declarative component.
  * @return {Object} Validation result.
  */
-function aerpValidateRenderableComponent(
-  component
-) {
+function aerpValidateRenderableComponent(component) {
   const errors = [];
 
-  if (
-    component === null ||
-    typeof component !== 'object' ||
-    Array.isArray(component)
-  ) {
-    errors.push(
-      'Component must be an object.'
-    );
+  if (component === null || typeof component !== 'object' || Array.isArray(component)) {
+    errors.push('Component must be an object.');
 
     return {
       ok: false,
@@ -172,71 +134,31 @@ function aerpValidateRenderableComponent(
     };
   }
 
-  if (
-    typeof component.component !== 'string' ||
-    component.component.trim() === ''
-  ) {
-    errors.push(
-      'Component type is required.'
-    );
+  if (typeof component.component !== 'string' || component.component.trim() === '') {
+    errors.push('Component type is required.');
   }
 
-  if (
-    typeof component.variant !== 'string' ||
-    component.variant.trim() === ''
-  ) {
-    errors.push(
-      'Component variant is required.'
-    );
+  if (typeof component.variant !== 'string' || component.variant.trim() === '') {
+    errors.push('Component variant is required.');
   }
 
-  if (
-    component.preset === null ||
-    typeof component.preset !== 'object'
-  ) {
-    errors.push(
-      'Resolved component preset is required.'
-    );
+  if (component.preset === null || typeof component.preset !== 'object') {
+    errors.push('Resolved component preset is required.');
   }
 
-  if (
-    component.properties === null ||
-    typeof component.properties !== 'object'
-  ) {
-    errors.push(
-      'Component properties are required.'
-    );
+  if (component.properties === null || typeof component.properties !== 'object') {
+    errors.push('Component properties are required.');
   }
 
-  if (
-    component.state === null ||
-    typeof component.state !== 'object'
-  ) {
-    errors.push(
-      'Component state is required.'
-    );
+  if (component.state === null || typeof component.state !== 'object') {
+    errors.push('Component state is required.');
   }
 
   const rendererKey =
-    (
-      component.component &&
-      component.variant
-    )
-      ? component.component +
-        '.' +
-        component.variant
-      : null;
+    component.component && component.variant ? component.component + '.' + component.variant : null;
 
-  if (
-    rendererKey &&
-    typeof AERP_SHEET_RENDERERS[
-      rendererKey
-    ] !== 'function'
-  ) {
-    errors.push(
-      'No renderer registered for: ' +
-      rendererKey
-    );
+  if (rendererKey && typeof AERP_SHEET_RENDERERS[rendererKey] !== 'function') {
+    errors.push('No renderer registered for: ' + rendererKey);
   }
 
   return {
@@ -245,7 +167,6 @@ function aerpValidateRenderableComponent(
     errors: errors
   };
 }
-
 
 /* ============================================================
  * 3. KPI CARD RENDERER
@@ -266,43 +187,26 @@ function aerpValidateRenderableComponent(
  * @return {*} Complete rendered card range.
  * @private
  */
-function aerpRenderKpiCard_(
-  context
-) {
-  const sheet =
-    context.sheet;
+function aerpRenderKpiCard_(context) {
+  const sheet = context.sheet;
 
-  const preset =
-    context.preset;
+  const preset = context.preset;
 
-  const properties =
-    context.properties || {};
+  const properties = context.properties || {};
 
-  const state =
-    context.state || {};
+  const state = context.state || {};
 
-  const options =
-    context.options || {};
+  const options = context.options || {};
 
-  const layout =
-    aerpCreateKpiLayout_(
-      sheet,
-      context.rangeA1
-    );
+  const layout = aerpCreateKpiLayout_(sheet, context.rangeA1);
 
-  aerpApplyKpiLayoutContainer_(
-    layout,
-    preset.container,
-    options
-  );
+  aerpApplyKpiLayoutContainer_(layout, preset.container, options);
 
   /*
    * Invisible components preserve their geometry but do not
    * render visible content.
    */
-  if (
-    state.visible === false
-  ) {
+  if (state.visible === false) {
     layout.source.clearContent();
 
     return layout.source;
@@ -311,154 +215,78 @@ function aerpRenderKpiCard_(
   /*
    * Loading state occupies the body region.
    */
-  if (
-    state.loading === true
-  ) {
+  if (state.loading === true) {
     layout.header.clearContent();
     layout.footer.clearContent();
 
-    layout.body
-      .setValue(
-        String(
-          options.loadingText ||
-          'Cargando...'
-        )
-      );
+    layout.body.setValue(String(options.loadingText || 'Cargando...'));
 
-    aerpApplyLayoutTextStyle_(
-      layout.body,
-      preset.subtitle,
-      {
-        horizontalAlignment:
-          'center'
-      }
-    );
+    aerpApplyLayoutTextStyle_(layout.body, preset.subtitle, {
+      horizontalAlignment: 'center'
+    });
 
     return layout.source;
   }
 
-  const icon =
-    aerpRendererText_(
-      properties.icon
-    );
+  const icon = aerpRendererText_(properties.icon);
 
-  const title =
-    aerpRendererText_(
-      properties.title
-    );
+  const title = aerpRendererText_(properties.title);
 
-  const value =
-    aerpRendererText_(
-      properties.value
-    );
+  const value = aerpRendererText_(properties.value);
 
-  const subtitle =
-    aerpRendererText_(
-      properties.subtitle
-    );
+  const subtitle = aerpRendererText_(properties.subtitle);
 
-  const headerText =
-    [icon, title]
-      .filter(function(item) {
-        return item !== '';
-      })
-      .join(' ');
+  const headerText = [icon, title]
+    .filter(function (item) {
+      return item !== '';
+    })
+    .join(' ');
 
-  layout.header
-    .setValue(
-      headerText
-    );
+  layout.header.setValue(headerText);
 
-  layout.body
-    .setValue(
-      value
-    );
+  layout.body.setValue(value);
 
-  layout.footer
-    .setValue(
-      subtitle
-    );
+  layout.footer.setValue(subtitle);
 
-  aerpApplyLayoutTextStyle_(
-    layout.header,
-    preset.label,
-    {
-      fontSize:
-        options.titleFontSize,
+  aerpApplyLayoutTextStyle_(layout.header, preset.label, {
+    fontSize: options.titleFontSize,
 
-      textColor:
-        options.titleColor,
+    textColor: options.titleColor,
 
-      horizontalAlignment:
-        options.headerAlignment ||
-        'left'
-    }
-  );
+    horizontalAlignment: options.headerAlignment || 'left'
+  });
 
-  aerpApplyLayoutTextStyle_(
-    layout.body,
-    preset.value,
-    {
-      fontSize:
-        options.valueFontSize ||
-        options.fontSize,
+  aerpApplyLayoutTextStyle_(layout.body, preset.value, {
+    fontSize: options.valueFontSize || options.fontSize,
 
-      textColor:
-        options.valueColor ||
-        options.textColor,
+    textColor: options.valueColor || options.textColor,
 
-      fontWeight:
-        options.valueFontWeight ||
-        'bold',
+    fontWeight: options.valueFontWeight || 'bold',
 
-      horizontalAlignment:
-        options.valueAlignment ||
-        'center'
-    }
-  );
+    horizontalAlignment: options.valueAlignment || 'center'
+  });
 
-  aerpApplyLayoutTextStyle_(
-    layout.footer,
-    preset.subtitle,
-    {
-      fontSize:
-        options.subtitleFontSize,
+  aerpApplyLayoutTextStyle_(layout.footer, preset.subtitle, {
+    fontSize: options.subtitleFontSize,
 
-      textColor:
-        options.subtitleColor,
+    textColor: options.subtitleColor,
 
-      horizontalAlignment:
-        options.footerAlignment ||
-        'left'
-    }
-  );
+    horizontalAlignment: options.footerAlignment || 'left'
+  });
 
   /*
    * Disabled state.
    */
-  if (
-    state.enabled === false
-  ) {
-    const theme =
-      aerpGetTheme();
+  if (state.enabled === false) {
+    const theme = aerpGetTheme();
 
     layout.source
-      .setBackground(
-        options.disabledBackground ||
-        theme.colors
-          .surface
-          .disabled
-      )
-      .setFontColor(
-        theme.colors
-          .text
-          .disabled
-      );
+      .setBackground(options.disabledBackground || theme.colors.surface.disabled)
+      .setFontColor(theme.colors.text.disabled);
   }
 
   return layout.source;
 }
-
 
 /**
  * Builds the visible KPI text.
@@ -469,57 +297,30 @@ function aerpRenderKpiCard_(
  * @return {string} Visible content.
  * @private
  */
-function aerpRendererBuildKpiContent_(
-  properties,
-  state,
-  options
-) {
-  if (
-    state.visible === false
-  ) {
+function aerpRendererBuildKpiContent_(properties, state, options) {
+  if (state.visible === false) {
     return '';
   }
 
-  if (
-    state.loading === true
-  ) {
-    return String(
-      options.loadingText ||
-      'Cargando...'
-    );
+  if (state.loading === true) {
+    return String(options.loadingText || 'Cargando...');
   }
 
   const lines = [];
 
-  const icon =
-    aerpRendererText_(
-      properties.icon
-    );
+  const icon = aerpRendererText_(properties.icon);
 
-  const title =
-    aerpRendererText_(
-      properties.title
-    );
+  const title = aerpRendererText_(properties.title);
 
-  const value =
-    aerpRendererText_(
-      properties.value
-    );
+  const value = aerpRendererText_(properties.value);
 
-  const subtitle =
-    aerpRendererText_(
-      properties.subtitle
-    );
+  const subtitle = aerpRendererText_(properties.subtitle);
 
-  const heading =
-    [
-      icon,
-      title
-    ]
-      .filter(function(item) {
-        return item !== '';
-      })
-      .join(' ');
+  const heading = [icon, title]
+    .filter(function (item) {
+      return item !== '';
+    })
+    .join(' ');
 
   if (heading) {
     lines.push(heading);
@@ -560,43 +361,26 @@ function aerpRendererBuildKpiContent_(
  * @return {Object} KPI layout regions.
  * @private
  */
-function aerpCreateKpiLayout_(
-  sheet,
-  rangeA1
-) {
-  aerpRendererRequireSheet_(
-    sheet
-  );
+function aerpCreateKpiLayout_(sheet, rangeA1) {
+  aerpRendererRequireSheet_(sheet);
 
-  const normalizedRange =
-    aerpRendererNormalizeRange_(
-      rangeA1
-    );
+  const normalizedRange = aerpRendererNormalizeRange_(rangeA1);
 
-  const sourceRange =
-    sheet.getRange(
-      normalizedRange
-    );
+  const sourceRange = sheet.getRange(normalizedRange);
 
   sourceRange.breakApart();
   sourceRange.clear();
 
-  const startRow =
-    sourceRange.getRow();
+  const startRow = sourceRange.getRow();
 
-  const startColumn =
-    sourceRange.getColumn();
+  const startColumn = sourceRange.getColumn();
 
-  const rowCount =
-    sourceRange.getNumRows();
+  const rowCount = sourceRange.getNumRows();
 
-  const columnCount =
-    sourceRange.getNumColumns();
+  const columnCount = sourceRange.getNumColumns();
 
   if (rowCount < 3) {
-    throw new Error(
-      '[AERP-029] KPI layout requires at least 3 rows.'
-    );
+    throw new Error('[AERP-029] KPI layout requires at least 3 rows.');
   }
 
   /*
@@ -606,58 +390,26 @@ function aerpCreateKpiLayout_(
    * Body:   approximately 50 %
    * Footer: remaining rows
    */
-  const headerRows =
-    Math.max(
-      1,
-      Math.floor(
-        rowCount * 0.25
-      )
-    );
+  const headerRows = Math.max(1, Math.floor(rowCount * 0.25));
 
-  const footerRows =
-    Math.max(
-      1,
-      Math.floor(
-        rowCount * 0.25
-      )
-    );
+  const footerRows = Math.max(1, Math.floor(rowCount * 0.25));
 
-  const bodyRows =
-    rowCount -
-    headerRows -
-    footerRows;
+  const bodyRows = rowCount - headerRows - footerRows;
 
   if (bodyRows < 1) {
-    throw new Error(
-      '[AERP-029] KPI layout does not have enough rows for its body.'
-    );
+    throw new Error('[AERP-029] KPI layout does not have enough rows for its body.');
   }
 
-  const headerRange =
-    sheet.getRange(
-      startRow,
-      startColumn,
-      headerRows,
-      columnCount
-    );
+  const headerRange = sheet.getRange(startRow, startColumn, headerRows, columnCount);
 
-  const bodyRange =
-    sheet.getRange(
-      startRow + headerRows,
-      startColumn,
-      bodyRows,
-      columnCount
-    );
+  const bodyRange = sheet.getRange(startRow + headerRows, startColumn, bodyRows, columnCount);
 
-  const footerRange =
-    sheet.getRange(
-      startRow +
-      headerRows +
-      bodyRows,
-      startColumn,
-      footerRows,
-      columnCount
-    );
+  const footerRange = sheet.getRange(
+    startRow + headerRows + bodyRows,
+    startColumn,
+    footerRows,
+    columnCount
+  );
 
   headerRange.merge();
   bodyRange.merge();
@@ -681,7 +433,6 @@ function aerpCreateKpiLayout_(
   };
 }
 
-
 /**
  * Applies the shared card surface to every KPI layout region.
  *
@@ -694,61 +445,29 @@ function aerpCreateKpiLayout_(
  * @return {Object} Styled layout.
  * @private
  */
-function aerpApplyKpiLayoutContainer_(
-  layout,
-  container,
-  options
-) {
-  const preset =
-    container || {};
+function aerpApplyKpiLayoutContainer_(layout, container, options) {
+  const preset = container || {};
 
-  const config =
-    options || {};
+  const config = options || {};
 
-  const background =
-    config.background ||
-    preset.background ||
-    '#FFFFFF';
+  const background = config.background || preset.background || '#FFFFFF';
 
-  const borderColor =
-    config.borderColor ||
-    preset.borderColor ||
-    '#E2E8F0';
+  const borderColor = config.borderColor || preset.borderColor || '#E2E8F0';
 
-  const borderWidth =
-    Number(
-      config.borderWidth ||
-      preset.borderWidth ||
-      1
-    );
+  const borderWidth = Number(config.borderWidth || preset.borderWidth || 1);
 
-  const borderStyle =
-    aerpRendererResolveBorderStyle_(
-      config.borderStyle ||
-      preset.borderStyle ||
-      'solid',
+  const borderStyle = aerpRendererResolveBorderStyle_(
+    config.borderStyle || preset.borderStyle || 'solid',
 
-      borderWidth
-    );
+    borderWidth
+  );
 
   layout.source
-    .setBackground(
-      background
-    )
-    .setBorder(
-      true,
-      true,
-      true,
-      true,
-      false,
-      false,
-      borderColor,
-      borderStyle
-    );
+    .setBackground(background)
+    .setBorder(true, true, true, true, false, false, borderColor, borderStyle);
 
   return layout;
 }
-
 
 /**
  * Applies typography directly to a layout region.
@@ -759,61 +478,23 @@ function aerpApplyKpiLayoutContainer_(
  * @return {*} Styled range.
  * @private
  */
-function aerpApplyLayoutTextStyle_(
-  range,
-  textPreset,
-  overrides
-) {
-  const preset =
-    textPreset || {};
+function aerpApplyLayoutTextStyle_(range, textPreset, overrides) {
+  const preset = textPreset || {};
 
-  const config =
-    overrides || {};
+  const config = overrides || {};
 
-  const typography =
-    preset.typography || {};
+  const typography = preset.typography || {};
 
-  const theme =
-    aerpGetTheme();
+  const theme = aerpGetTheme();
 
   range
-    .setFontFamily(
-      config.fontFamily ||
-      theme.typography
-        .fontFamily
-        .primary
-    )
-    .setFontSize(
-      Number(
-        config.fontSize ||
-        typography.fontSize ||
-        theme.typography
-          .fontSize
-          .md
-      )
-    )
-    .setFontWeight(
-      config.fontWeight ||
-      aerpRendererNormalizeFontWeight_(
-        typography.fontWeight
-      )
-    )
-    .setFontColor(
-      config.textColor ||
-      preset.color ||
-      theme.colors
-        .text
-        .primary
-    )
+    .setFontFamily(config.fontFamily || theme.typography.fontFamily.primary)
+    .setFontSize(Number(config.fontSize || typography.fontSize || theme.typography.fontSize.md))
+    .setFontWeight(config.fontWeight || aerpRendererNormalizeFontWeight_(typography.fontWeight))
+    .setFontColor(config.textColor || preset.color || theme.colors.text.primary)
     .setWrap(true)
-    .setVerticalAlignment(
-      config.verticalAlignment ||
-      'middle'
-    )
-    .setHorizontalAlignment(
-      config.horizontalAlignment ||
-      'center'
-    );
+    .setVerticalAlignment(config.verticalAlignment || 'middle')
+    .setHorizontalAlignment(config.horizontalAlignment || 'center');
 
   return range;
 }
@@ -832,42 +513,20 @@ function aerpApplyLayoutTextStyle_(
  * @return {*} Styled range.
  * @private
  */
-function aerpRendererApplyContainer_(
-  range,
-  container,
-  options
-) {
-  const preset =
-    container || {};
+function aerpRendererApplyContainer_(range, container, options) {
+  const preset = container || {};
 
-  const config =
-    options || {};
+  const config = options || {};
 
-  const background =
-    config.background ||
-    preset.background ||
-    '#FFFFFF';
+  const background = config.background || preset.background || '#FFFFFF';
 
-  const borderColor =
-    config.borderColor ||
-    preset.borderColor ||
-    '#E2E8F0';
+  const borderColor = config.borderColor || preset.borderColor || '#E2E8F0';
 
-  const borderWidth =
-    Number(
-      config.borderWidth ||
-      preset.borderWidth ||
-      1
-    );
+  const borderWidth = Number(config.borderWidth || preset.borderWidth || 1);
 
-  const borderStyle =
-    config.borderStyle ||
-    preset.borderStyle ||
-    'solid';
+  const borderStyle = config.borderStyle || preset.borderStyle || 'solid';
 
-  range.setBackground(
-    background
-  );
+  range.setBackground(background);
 
   range.setBorder(
     true,
@@ -877,15 +536,11 @@ function aerpRendererApplyContainer_(
     false,
     false,
     borderColor,
-    aerpRendererResolveBorderStyle_(
-      borderStyle,
-      borderWidth
-    )
+    aerpRendererResolveBorderStyle_(borderStyle, borderWidth)
   );
 
   return range;
 }
-
 
 /**
  * Applies typography from the resolved preset.
@@ -896,68 +551,31 @@ function aerpRendererApplyContainer_(
  * @return {*} Styled range.
  * @private
  */
-function aerpRendererApplyTypography_(
-  range,
-  textPreset,
-  options
-) {
-  const preset =
-    textPreset || {};
+function aerpRendererApplyTypography_(range, textPreset, options) {
+  const preset = textPreset || {};
 
-  const config =
-    options || {};
+  const config = options || {};
 
-  const typography =
-    preset.typography || {};
+  const typography = preset.typography || {};
 
-  const theme =
-    aerpGetTheme();
+  const theme = aerpGetTheme();
 
-  const fontFamily =
-    config.fontFamily ||
-    theme.typography
-      .fontFamily
-      .primary;
+  const fontFamily = config.fontFamily || theme.typography.fontFamily.primary;
 
-  const fontSize =
-    Number(
-      config.fontSize ||
-      typography.fontSize ||
-      theme.typography
-        .fontSize
-        .md
-    );
+  const fontSize = Number(config.fontSize || typography.fontSize || theme.typography.fontSize.md);
 
-  const fontWeight =
-    config.fontWeight ||
-    aerpRendererNormalizeFontWeight_(
-      typography.fontWeight
-    );
+  const fontWeight = config.fontWeight || aerpRendererNormalizeFontWeight_(typography.fontWeight);
 
-  const fontColor =
-    config.textColor ||
-    preset.color ||
-    theme.colors
-      .text
-      .primary;
+  const fontColor = config.textColor || preset.color || theme.colors.text.primary;
 
   range
-    .setFontFamily(
-      fontFamily
-    )
-    .setFontSize(
-      fontSize
-    )
-    .setFontWeight(
-      fontWeight
-    )
-    .setFontColor(
-      fontColor
-    );
+    .setFontFamily(fontFamily)
+    .setFontSize(fontSize)
+    .setFontWeight(fontWeight)
+    .setFontColor(fontColor);
 
   return range;
 }
-
 
 /**
  * Applies component state styling.
@@ -968,40 +586,21 @@ function aerpRendererApplyTypography_(
  * @return {*} Styled range.
  * @private
  */
-function aerpRendererApplyKpiState_(
-  range,
-  state,
-  options
-) {
-  const componentState =
-    state || {};
+function aerpRendererApplyKpiState_(range, state, options) {
+  const componentState = state || {};
 
-  const config =
-    options || {};
+  const config = options || {};
 
-  if (
-    componentState.enabled === false
-  ) {
-    const theme =
-      aerpGetTheme();
+  if (componentState.enabled === false) {
+    const theme = aerpGetTheme();
 
     range
-      .setFontColor(
-        theme.colors
-          .text
-          .disabled
-      )
-      .setBackground(
-        config.disabledBackground ||
-        theme.colors
-          .surface
-          .disabled
-      );
+      .setFontColor(theme.colors.text.disabled)
+      .setBackground(config.disabledBackground || theme.colors.surface.disabled);
   }
 
   return range;
 }
-
 
 /* ============================================================
  * 6. PRIVATE HELPERS
@@ -1015,18 +614,13 @@ function aerpRendererApplyKpiState_(
  * @return {*} Valid sheet.
  * @private
  */
-function aerpRendererRequireSheet_(
-  sheet
-) {
+function aerpRendererRequireSheet_(sheet) {
   if (!sheet) {
-    throw new Error(
-      '[AERP-029] A valid sheet is required.'
-    );
+    throw new Error('[AERP-029] A valid sheet is required.');
   }
 
   return sheet;
 }
-
 
 /**
  * Normalizes a range in A1 notation.
@@ -1035,22 +629,15 @@ function aerpRendererRequireSheet_(
  * @return {string} Normalized range.
  * @private
  */
-function aerpRendererNormalizeRange_(
-  rangeA1
-) {
-  const normalizedRange =
-    String(rangeA1 || '')
-      .trim();
+function aerpRendererNormalizeRange_(rangeA1) {
+  const normalizedRange = String(rangeA1 || '').trim();
 
   if (!normalizedRange) {
-    throw new Error(
-      '[AERP-029] A valid A1 range is required.'
-    );
+    throw new Error('[AERP-029] A valid A1 range is required.');
   }
 
   return normalizedRange;
 }
-
 
 /**
  * Clears, separates and merges a target range.
@@ -1060,14 +647,8 @@ function aerpRendererNormalizeRange_(
  * @return {*} Prepared range.
  * @private
  */
-function aerpRendererPrepareRange_(
-  sheet,
-  rangeA1
-) {
-  const range =
-    sheet.getRange(
-      rangeA1
-    );
+function aerpRendererPrepareRange_(sheet, rangeA1) {
+  const range = sheet.getRange(rangeA1);
 
   range.breakApart();
   range.clear();
@@ -1076,7 +657,6 @@ function aerpRendererPrepareRange_(
   return range;
 }
 
-
 /**
  * Converts any value to visible text.
  *
@@ -1084,19 +664,13 @@ function aerpRendererPrepareRange_(
  * @return {string} Text.
  * @private
  */
-function aerpRendererText_(
-  value
-) {
-  if (
-    value === null ||
-    value === undefined
-  ) {
+function aerpRendererText_(value) {
+  if (value === null || value === undefined) {
     return '';
   }
 
   return String(value);
 }
-
 
 /**
  * Converts a numeric font weight into a value supported by
@@ -1106,14 +680,9 @@ function aerpRendererText_(
  * @return {string} normal or bold.
  * @private
  */
-function aerpRendererNormalizeFontWeight_(
-  fontWeight
-) {
-  return Number(fontWeight) >= 600
-    ? 'bold'
-    : 'normal';
+function aerpRendererNormalizeFontWeight_(fontWeight) {
+  return Number(fontWeight) >= 600 ? 'bold' : 'normal';
 }
-
 
 /**
  * Converts semantic border values to Google Sheets styles.
@@ -1123,49 +692,25 @@ function aerpRendererNormalizeFontWeight_(
  * @return {*} SpreadsheetApp.BorderStyle.
  * @private
  */
-function aerpRendererResolveBorderStyle_(
-  borderStyle,
-  borderWidth
-) {
-  const normalizedStyle =
-    String(
-      borderStyle || 'solid'
-    ).toLowerCase();
+function aerpRendererResolveBorderStyle_(borderStyle, borderWidth) {
+  const normalizedStyle = String(borderStyle || 'solid').toLowerCase();
 
-  const normalizedWidth =
-    Number(
-      borderWidth || 1
-    );
+  const normalizedWidth = Number(borderWidth || 1);
 
-  if (
-    normalizedStyle === 'dashed'
-  ) {
-    return SpreadsheetApp
-      .BorderStyle
-      .DASHED;
+  if (normalizedStyle === 'dashed') {
+    return SpreadsheetApp.BorderStyle.DASHED;
   }
 
-  if (
-    normalizedStyle === 'dotted'
-  ) {
-    return SpreadsheetApp
-      .BorderStyle
-      .DOTTED;
+  if (normalizedStyle === 'dotted') {
+    return SpreadsheetApp.BorderStyle.DOTTED;
   }
 
-  if (
-    normalizedWidth >= 2
-  ) {
-    return SpreadsheetApp
-      .BorderStyle
-      .SOLID_MEDIUM;
+  if (normalizedWidth >= 2) {
+    return SpreadsheetApp.BorderStyle.SOLID_MEDIUM;
   }
 
-  return SpreadsheetApp
-    .BorderStyle
-    .SOLID;
+  return SpreadsheetApp.BorderStyle.SOLID;
 }
-
 
 /* ============================================================
  * 7. TESTS
@@ -1185,8 +730,7 @@ function testAerpSheetRenderer() {
     ok: false,
     module: 'AERP-029',
     phase: 'Phase 2 - Layout Engine',
-    version:
-      AERP_SHEET_RENDERER_VERSION,
+    version: AERP_SHEET_RENDERER_VERSION,
 
     tests: {
       factoryAvailable: false,
@@ -1207,207 +751,94 @@ function testAerpSheetRenderer() {
   };
 
   try {
-    result.tests.factoryAvailable =
-      typeof aerpCreateComponent ===
-      'function';
+    result.tests.factoryAvailable = typeof aerpCreateComponent === 'function';
 
-    result.tests.rendererRegistered =
-      typeof AERP_SHEET_RENDERERS[
-        'card.kpi'
-      ] === 'function';
+    result.tests.rendererRegistered = typeof AERP_SHEET_RENDERERS['card.kpi'] === 'function';
 
-    const component =
-      aerpCreateComponent(
-        'card',
-        'kpi',
-        {
-          id: 'renderer-test-kpi',
-          icon: '📊',
-          title: 'VENTAS DEL MES',
-          value: '€58.240',
-          subtitle:
-            'Facturación acumulada'
-        }
-      );
+    const component = aerpCreateComponent('card', 'kpi', {
+      id: 'renderer-test-kpi',
+      icon: '📊',
+      title: 'VENTAS DEL MES',
+      value: '€58.240',
+      subtitle: 'Facturación acumulada'
+    });
 
-    result.tests.componentCreated =
-      component.component === 'card' &&
-      component.variant === 'kpi';
+    result.tests.componentCreated = component.component === 'card' && component.variant === 'kpi';
 
-    const validation =
-      aerpValidateRenderableComponent(
-        component
-      );
+    const validation = aerpValidateRenderableComponent(component);
 
-    result.tests.validationPassed =
-      validation.ok === true;
+    result.tests.validationPassed = validation.ok === true;
 
-    const ss =
-      aerpGetSpreadsheet();
+    const ss = aerpGetSpreadsheet();
 
-    const sheetName =
-      'AERP_TEST_RENDERER';
+    const sheetName = 'AERP_TEST_RENDERER';
 
-    const existingSheet =
-      ss.getSheetByName(
-        sheetName
-      );
+    const existingSheet = ss.getSheetByName(sheetName);
 
     if (existingSheet) {
-      ss.deleteSheet(
-        existingSheet
-      );
+      ss.deleteSheet(existingSheet);
 
       SpreadsheetApp.flush();
     }
 
-    const sheet =
-      ss.insertSheet(
-        sheetName
-      );
+    const sheet = ss.insertSheet(sheetName);
 
-    result.sheet =
-      sheetName;
+    result.sheet = sheetName;
 
-    result.tests.sheetCreated =
-      Boolean(sheet);
+    result.tests.sheetCreated = Boolean(sheet);
 
-    sheet.setColumnWidths(
-      1,
-      8,
-      110
-    );
+    sheet.setColumnWidths(1, 8, 110);
 
-   sheet.setRowHeights(
-  1,
-  12,
-  32
-);
+    sheet.setRowHeights(1, 12, 32);
 
-    const renderedRange =
-      aerpRenderComponent(
-        sheet,
-        'A1:D6',
-        component
-      );
+    const renderedRange = aerpRenderComponent(sheet, 'A1:D6', component);
 
-    result.tests.rangeRendered =
-      Boolean(renderedRange);
+    result.tests.rangeRendered = Boolean(renderedRange);
 
- const mainHeaderRange =
-  sheet.getRange(
-    'A1:D1'
-  );
+    const mainHeaderRange = sheet.getRange('A1:D1');
 
-const mainBodyRange =
-  sheet.getRange(
-    'A2:D5'
-  );
+    const mainBodyRange = sheet.getRange('A2:D5');
 
-const mainFooterRange =
-  sheet.getRange(
-    'A6:D6'
-  );
+    const mainFooterRange = sheet.getRange('A6:D6');
 
-result.tests.contentRendered =
-  mainHeaderRange
-    .getDisplayValue()
-    .indexOf(
-      'VENTAS DEL MES'
-    ) !== -1 &&
+    result.tests.contentRendered =
+      mainHeaderRange.getDisplayValue().indexOf('VENTAS DEL MES') !== -1 &&
+      mainBodyRange.getDisplayValue().indexOf('€58.240') !== -1 &&
+      mainFooterRange.getDisplayValue().indexOf('Facturación acumulada') !== -1;
 
-  mainBodyRange
-    .getDisplayValue()
-    .indexOf(
-      '€58.240'
-    ) !== -1 &&
+    Logger.log('Theme background: ' + component.preset.container.background);
 
-  mainFooterRange
-    .getDisplayValue()
-    .indexOf(
-      'Facturación acumulada'
-    ) !== -1;
+    Logger.log('Sheet background: ' + renderedRange.getBackground());
 
-    Logger.log(
-  'Theme background: ' +
-  component.preset.container.background
-);
+    result.tests.backgroundApplied =
+      renderedRange.getBackground().toLowerCase() ===
+      component.preset.container.background.toLowerCase();
 
-Logger.log(
-  'Sheet background: ' +
-  renderedRange.getBackground()
-);
+    result.tests.typographyApplied =
+      mainBodyRange.getFontSize() === component.preset.value.typography.fontSize;
 
-result.tests.backgroundApplied =
-  renderedRange
-    .getBackground()
-    .toLowerCase() ===
-  component.preset
-    .container
-    .background
-    .toLowerCase();
+    const customComponent = aerpCreateComponent('card', 'kpi', {
+      id: 'renderer-custom-kpi',
+      icon: '📦',
+      title: 'INVENTARIO',
+      value: '1.248'
+    });
 
+    const customRange = aerpRenderComponent(sheet, 'F1:H6', customComponent, {
+      background: '#FFFFFF',
+      textColor: '#0F172A',
+      fontSize: 18,
+      borderWidth: 2
+    });
 
+    const customBodyRange = sheet.getRange('F2:H5');
 
-result.tests.typographyApplied =
-  mainBodyRange
-    .getFontSize() ===
-  component.preset
-    .value
-    .typography
-    .fontSize;
-
-    const customComponent =
-      aerpCreateComponent(
-        'card',
-        'kpi',
-        {
-          id: 'renderer-custom-kpi',
-          icon: '📦',
-          title: 'INVENTARIO',
-          value: '1.248'
-        }
-      );
-
-    const customRange =
-      aerpRenderComponent(
-        sheet,
-        'F1:H6',
-        customComponent,
-        {
-          background: '#FFFFFF',
-          textColor: '#0F172A',
-          fontSize: 18,
-          borderWidth: 2
-        }
-      );
-
- const customBodyRange =
-  sheet.getRange(
-    'F2:H5'
-  );
-
-result.tests.customOptionsApplied =
-  customRange
-    .getBackground()
-    .toLowerCase() ===
-    '#ffffff' &&
-
-  customBodyRange
-    .getFontColor()
-    .toLowerCase() ===
-    '#0f172a' &&
-
-  customBodyRange
-    .getFontSize() ===
-    18;
-
+    result.tests.customOptionsApplied =
+      customRange.getBackground().toLowerCase() === '#ffffff' &&
+      customBodyRange.getFontColor().toLowerCase() === '#0f172a' &&
+      customBodyRange.getFontSize() === 18;
   } catch (error) {
-    result.errors.push(
-      error && error.message
-        ? error.message
-        : String(error)
-    );
+    result.errors.push(error && error.message ? error.message : String(error));
   }
 
   try {
@@ -1420,40 +851,25 @@ result.tests.customOptionsApplied =
     };
 
     aerpRenderComponent(
-      SpreadsheetApp
-        .getActiveSpreadsheet()
-        .getActiveSheet(),
+      SpreadsheetApp.getActiveSpreadsheet().getActiveSheet(),
       'J1:L4',
       invalidComponent
     );
-
   } catch (error) {
-    result.tests.invalidRendererRejected =
-      true;
+    result.tests.invalidRendererRejected = true;
   }
 
-  const testValues =
-    Object.keys(
-      result.tests
-    ).map(function(testName) {
-      return result.tests[
-        testName
-      ];
-    });
+  const testValues = Object.keys(result.tests).map(function (testName) {
+    return result.tests[testName];
+  });
 
   result.ok =
     result.errors.length === 0 &&
-    testValues.every(function(value) {
+    testValues.every(function (value) {
       return value === true;
     });
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   return result;
 }

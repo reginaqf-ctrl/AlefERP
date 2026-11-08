@@ -4,15 +4,49 @@
  */
 
 const AERP_VALID_TIPO_DATO = [
-  'Text','LongText','Number','Decimal','Price','Percent',
-  'Date','DateTime','Time','YesNo','Email','Phone','URL',
-  'Image','File','Enum','EnumList','Ref','LatLong','Color'
+  'Text',
+  'LongText',
+  'Number',
+  'Decimal',
+  'Price',
+  'Percent',
+  'Date',
+  'DateTime',
+  'Time',
+  'YesNo',
+  'Email',
+  'Phone',
+  'URL',
+  'Image',
+  'File',
+  'Enum',
+  'EnumList',
+  'Ref',
+  'LatLong',
+  'Color'
 ];
 
 const AERP_VALID_TIPO_CONTROL = [
-  'Text','Textarea','Dropdown','Checkbox','DatePicker','TimePicker',
-  'DateTimePicker','Number','Currency','Percent','Email','Phone',
-  'URL','Image','File','ColorPicker','Map','Signature','Barcode','QR'
+  'Text',
+  'Textarea',
+  'Dropdown',
+  'Checkbox',
+  'DatePicker',
+  'TimePicker',
+  'DateTimePicker',
+  'Number',
+  'Currency',
+  'Percent',
+  'Email',
+  'Phone',
+  'URL',
+  'Image',
+  'File',
+  'ColorPicker',
+  'Map',
+  'Signature',
+  'Barcode',
+  'QR'
 ];
 
 function aerpValidateMetadata(metadataList) {

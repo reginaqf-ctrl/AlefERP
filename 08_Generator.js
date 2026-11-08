@@ -13,7 +13,6 @@ const AERP_MODES = {
 };
 
 function aerpGenerate(mode) {
-
   mode = mode || AERP_MODES.INCREMENTAL;
 
   const start = new Date();
@@ -37,12 +36,7 @@ function aerpGenerate(mode) {
   const validation = aerpValidateMetadata(metadata);
 
   if (!validation.ok) {
-
-    throw new Error(
-      'El proceso se canceló.\n\n' +
-      validation.errors.join('\n')
-    );
-
+    throw new Error('El proceso se canceló.\n\n' + validation.errors.join('\n'));
   }
 
   //----------------------------------
@@ -50,9 +44,7 @@ function aerpGenerate(mode) {
   //----------------------------------
 
   if (mode === AERP_MODES.DRY_RUN) {
-
     return {
-
       mode: mode,
 
       total: metadata.length,
@@ -61,10 +53,8 @@ function aerpGenerate(mode) {
 
       warnings: validation.warnings.length,
 
-      duration: (new Date() - start)
-
+      duration: new Date() - start
     };
-
   }
 
   //----------------------------------
@@ -73,10 +63,9 @@ function aerpGenerate(mode) {
 
   const result = aerpWriteCoreColumnas(metadata, mode);
 
-  result.duration = (new Date() - start);
+  result.duration = new Date() - start;
 
   return result;
-
 }
 
 function testMetadataRebuild() {
@@ -85,14 +74,8 @@ function testMetadataRebuild() {
   Logger.log(JSON.stringify(result, null, 2));
 
   if (!result || result.inserted === 0) {
-    throw new Error(
-      'El rebuild no insertó metadata en CORE_COLUMNAS.'
-    );
+    throw new Error('El rebuild no insertó metadata en CORE_COLUMNAS.');
   }
 
-  Logger.log(
-    'Metadata Rebuild OK: ' +
-    result.inserted +
-    ' columnas escritas.'
-  );
+  Logger.log('Metadata Rebuild OK: ' + result.inserted + ' columnas escritas.');
 }

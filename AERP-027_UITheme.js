@@ -29,7 +29,6 @@
  * ============================================================
  */
 
-
 /* ============================================================
  * 1. MODULE CONSTANTS
  * ============================================================
@@ -42,7 +41,6 @@
  */
 const AERP_UI_THEME_VERSION = '1.0.0';
 
-
 /**
  * Official Alef ERP Enterprise UI Theme.
  *
@@ -53,7 +51,6 @@ const AERP_UI_THEME_VERSION = '1.0.0';
  * @type {Object}
  */
 const AERP_UI_THEME = aerpDeepFreeze_({
-
   /* ----------------------------------------------------------
    * Metadata
    * ----------------------------------------------------------
@@ -66,10 +63,8 @@ const AERP_UI_THEME = aerpDeepFreeze_({
     version: AERP_UI_THEME_VERSION,
     status: 'ACTIVE',
     schemaVersion: '1.0',
-    description:
-      'Official design-token foundation for the Alef ERP user interface.'
+    description: 'Official design-token foundation for the Alef ERP user interface.'
   },
-
 
   /* ----------------------------------------------------------
    * Color system
@@ -77,7 +72,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
    */
 
   colors: {
-
     /**
      * Main brand colors.
      */
@@ -172,20 +166,16 @@ const AERP_UI_THEME = aerpDeepFreeze_({
     }
   },
 
-
   /* ----------------------------------------------------------
    * Typography system
    * ----------------------------------------------------------
    */
 
   typography: {
-
     fontFamily: {
-      primary:
-        'Inter, Roboto, Arial, sans-serif',
+      primary: 'Inter, Roboto, Arial, sans-serif',
 
-      monospace:
-        'Roboto Mono, Consolas, Courier New, monospace'
+      monospace: 'Roboto Mono, Consolas, Courier New, monospace'
     },
 
     fontWeight: {
@@ -306,7 +296,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
     }
   },
 
-
   /* ----------------------------------------------------------
    * Spacing system
    * ----------------------------------------------------------
@@ -324,7 +313,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
     xxxl: 64
   },
 
-
   /* ----------------------------------------------------------
    * Radius system
    * ----------------------------------------------------------
@@ -341,7 +329,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
     pill: 999
   },
 
-
   /* ----------------------------------------------------------
    * Shadow system
    * ----------------------------------------------------------
@@ -350,22 +337,16 @@ const AERP_UI_THEME = aerpDeepFreeze_({
   shadows: {
     none: 'none',
 
-    level1:
-      '0 1px 2px rgba(15, 23, 42, 0.06)',
+    level1: '0 1px 2px rgba(15, 23, 42, 0.06)',
 
-    level2:
-      '0 4px 12px rgba(15, 23, 42, 0.08)',
+    level2: '0 4px 12px rgba(15, 23, 42, 0.08)',
 
-    level3:
-      '0 10px 24px rgba(15, 23, 42, 0.12)',
+    level3: '0 10px 24px rgba(15, 23, 42, 0.12)',
 
-    level4:
-      '0 20px 40px rgba(15, 23, 42, 0.16)',
+    level4: '0 20px 40px rgba(15, 23, 42, 0.16)',
 
-    focus:
-      '0 0 0 3px rgba(37, 99, 235, 0.22)'
+    focus: '0 0 0 3px rgba(37, 99, 235, 0.22)'
   },
-
 
   /* ----------------------------------------------------------
    * Border system
@@ -386,7 +367,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
       dotted: 'dotted'
     }
   },
-
 
   /* ----------------------------------------------------------
    * Layout system
@@ -438,7 +418,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
    */
 
   components: {
-
     /* --------------------------------------------------------
      * Base card
      * --------------------------------------------------------
@@ -482,7 +461,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
           transitionEasing: '$motion.easing.standard'
         }
       },
-
 
       /* ------------------------------------------------------
        * KPI card
@@ -545,7 +523,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
         }
       },
 
-
       /* ------------------------------------------------------
        * Metric card
        * ------------------------------------------------------
@@ -590,7 +567,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
         }
       },
 
-
       /* ------------------------------------------------------
        * Quick-action card
        * ------------------------------------------------------
@@ -630,7 +606,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
         }
       }
     },
-
 
     /* --------------------------------------------------------
      * Buttons
@@ -719,7 +694,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
       }
     },
 
-
     /* --------------------------------------------------------
      * Status badges
      * --------------------------------------------------------
@@ -792,7 +766,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
       }
     },
 
-
     /* --------------------------------------------------------
      * Alerts
      * --------------------------------------------------------
@@ -863,7 +836,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
       }
     },
 
-
     /* --------------------------------------------------------
      * Section header
      * --------------------------------------------------------
@@ -901,7 +873,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
         }
       }
     },
-
 
     /* --------------------------------------------------------
      * Empty state
@@ -961,7 +932,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
     }
   },
 
-
   /* ----------------------------------------------------------
    * Layer system
    * ----------------------------------------------------------
@@ -977,7 +947,6 @@ const AERP_UI_THEME = aerpDeepFreeze_({
     tooltip: 4000
   }
 });
-
 
 /* ============================================================
  * 2. PUBLIC API
@@ -1001,7 +970,6 @@ function aerpGetTheme() {
   return AERP_UI_THEME;
 }
 
-
 /**
  * Returns a specific token from the UI Theme using dot notation.
  *
@@ -1016,13 +984,8 @@ function aerpGetTheme() {
  * @throws {Error} When the path is invalid or does not exist.
  */
 function aerpGetThemeToken(path) {
-  if (
-    typeof path !== 'string' ||
-    path.trim() === ''
-  ) {
-    throw new Error(
-      '[AERP-027] Theme token path must be a non-empty string.'
-    );
+  if (typeof path !== 'string' || path.trim() === '') {
+    throw new Error('[AERP-027] Theme token path must be a non-empty string.');
   }
 
   const normalizedPath = path.trim();
@@ -1038,9 +1001,7 @@ function aerpGetThemeToken(path) {
       currentValue === undefined ||
       !Object.prototype.hasOwnProperty.call(currentValue, key)
     ) {
-      throw new Error(
-        '[AERP-027] Theme token not found: ' + normalizedPath
-      );
+      throw new Error('[AERP-027] Theme token not found: ' + normalizedPath);
     }
 
     currentValue = currentValue[key];
@@ -1073,13 +1034,8 @@ function aerpGetThemeToken(path) {
  * @throws {Error} When the component path is invalid.
  */
 function aerpGetComponentPreset(componentPath) {
-  if (
-    typeof componentPath !== 'string' ||
-    componentPath.trim() === ''
-  ) {
-    throw new Error(
-      '[AERP-027] Component preset path must be a non-empty string.'
-    );
+  if (typeof componentPath !== 'string' || componentPath.trim() === '') {
+    throw new Error('[AERP-027] Component preset path must be a non-empty string.');
   }
 
   const normalizedPath = componentPath.trim();
@@ -1087,36 +1043,19 @@ function aerpGetComponentPreset(componentPath) {
   let preset;
 
   try {
-    preset = aerpGetThemeToken(
-      'components.' + normalizedPath
-    );
+    preset = aerpGetThemeToken('components.' + normalizedPath);
   } catch (error) {
-    throw new Error(
-      '[AERP-027] Component preset not found: ' +
-      normalizedPath
-    );
+    throw new Error('[AERP-027] Component preset not found: ' + normalizedPath);
   }
 
-  if (
-    preset === null ||
-    typeof preset !== 'object' ||
-    Array.isArray(preset)
-  ) {
-    throw new Error(
-      '[AERP-027] Invalid component preset: ' +
-      normalizedPath
-    );
+  if (preset === null || typeof preset !== 'object' || Array.isArray(preset)) {
+    throw new Error('[AERP-027] Invalid component preset: ' + normalizedPath);
   }
 
-  const resolvedPreset =
-    aerpResolveComponentPreset_(
-      preset,
-      []
-    );
+  const resolvedPreset = aerpResolveComponentPreset_(preset, []);
 
   return aerpDeepFreeze_(resolvedPreset);
 }
-
 
 /**
  * Lists all registered component preset paths.
@@ -1135,11 +1074,7 @@ function aerpGetComponentPreset(componentPath) {
 function aerpListComponentPresets() {
   const presetPaths = [];
 
-  aerpCollectComponentPaths_(
-    AERP_UI_THEME.components,
-    '',
-    presetPaths
-  );
+  aerpCollectComponentPaths_(AERP_UI_THEME.components, '', presetPaths);
 
   return presetPaths.sort();
 }
@@ -1174,44 +1109,19 @@ function aerpListComponentPresets() {
  * @return {Object} Validated and deeply frozen component.
  * @throws {Error} When the component definition is invalid.
  */
-function aerpCreateComponent(
-  type,
-  variant,
-  properties
-) {
-  const normalizedType =
-    aerpNormalizeComponentIdentity_(
-      type,
-      'type'
-    );
+function aerpCreateComponent(type, variant, properties) {
+  const normalizedType = aerpNormalizeComponentIdentity_(type, 'type');
 
-  const normalizedVariant =
-    aerpNormalizeComponentIdentity_(
-      variant,
-      'variant'
-    );
+  const normalizedVariant = aerpNormalizeComponentIdentity_(variant, 'variant');
 
-  const normalizedProperties =
-    aerpNormalizeComponentProperties_(
-      properties
-    );
+  const normalizedProperties = aerpNormalizeComponentProperties_(properties);
 
-  const presetPath =
-    normalizedType +
-    '.' +
-    normalizedVariant;
+  const presetPath = normalizedType + '.' + normalizedVariant;
 
-  const preset =
-    aerpGetComponentPreset(
-      presetPath
-    );
+  const preset = aerpGetComponentPreset(presetPath);
 
   const componentId =
-    normalizedProperties.id ||
-    aerpGenerateComponentId_(
-      normalizedType,
-      normalizedVariant
-    );
+    normalizedProperties.id || aerpGenerateComponentId_(normalizedType, normalizedVariant);
 
   const component = {
     id: componentId,
@@ -1224,20 +1134,14 @@ function aerpCreateComponent(
 
     preset: preset,
 
-    properties:
-      aerpRemoveReservedComponentProperties_(
-        normalizedProperties
-      ),
+    properties: aerpRemoveReservedComponentProperties_(normalizedProperties),
 
     state: {
-      visible:
-        normalizedProperties.visible !== false,
+      visible: normalizedProperties.visible !== false,
 
-      enabled:
-        normalizedProperties.enabled !== false,
+      enabled: normalizedProperties.enabled !== false,
 
-      loading:
-        normalizedProperties.loading === true
+      loading: normalizedProperties.loading === true
     },
 
     metadata: {
@@ -1248,23 +1152,14 @@ function aerpCreateComponent(
     }
   };
 
-  const validation =
-    aerpValidateComponentDefinition(
-      component
-    );
+  const validation = aerpValidateComponentDefinition(component);
 
   if (!validation.ok) {
-    throw new Error(
-      '[AERP-027] Invalid component definition: ' +
-      validation.errors.join(' | ')
-    );
+    throw new Error('[AERP-027] Invalid component definition: ' + validation.errors.join(' | '));
   }
 
-  return aerpDeepFreeze_(
-    component
-  );
+  return aerpDeepFreeze_(component);
 }
-
 
 /**
  * Validates a declarative component definition.
@@ -1272,19 +1167,11 @@ function aerpCreateComponent(
  * @param {Object} component Component definition.
  * @return {Object} Validation result.
  */
-function aerpValidateComponentDefinition(
-  component
-) {
+function aerpValidateComponentDefinition(component) {
   const errors = [];
 
-  if (
-    component === null ||
-    typeof component !== 'object' ||
-    Array.isArray(component)
-  ) {
-    errors.push(
-      'Component definition must be an object.'
-    );
+  if (component === null || typeof component !== 'object' || Array.isArray(component)) {
+    errors.push('Component definition must be an object.');
 
     return {
       ok: false,
@@ -1292,31 +1179,16 @@ function aerpValidateComponentDefinition(
     };
   }
 
-  if (
-    typeof component.id !== 'string' ||
-    component.id.trim() === ''
-  ) {
-    errors.push(
-      'Component id must be a non-empty string.'
-    );
+  if (typeof component.id !== 'string' || component.id.trim() === '') {
+    errors.push('Component id must be a non-empty string.');
   }
 
-  if (
-    typeof component.component !== 'string' ||
-    component.component.trim() === ''
-  ) {
-    errors.push(
-      'Component type must be a non-empty string.'
-    );
+  if (typeof component.component !== 'string' || component.component.trim() === '') {
+    errors.push('Component type must be a non-empty string.');
   }
 
-  if (
-    typeof component.variant !== 'string' ||
-    component.variant.trim() === ''
-  ) {
-    errors.push(
-      'Component variant must be a non-empty string.'
-    );
+  if (typeof component.variant !== 'string' || component.variant.trim() === '') {
+    errors.push('Component variant must be a non-empty string.');
   }
 
   if (
@@ -1324,9 +1196,7 @@ function aerpValidateComponentDefinition(
     typeof component.preset !== 'object' ||
     Array.isArray(component.preset)
   ) {
-    errors.push(
-      'Component preset must be a resolved object.'
-    );
+    errors.push('Component preset must be a resolved object.');
   }
 
   if (
@@ -1334,9 +1204,7 @@ function aerpValidateComponentDefinition(
     typeof component.properties !== 'object' ||
     Array.isArray(component.properties)
   ) {
-    errors.push(
-      'Component properties must be an object.'
-    );
+    errors.push('Component properties must be an object.');
   }
 
   if (
@@ -1344,32 +1212,18 @@ function aerpValidateComponentDefinition(
     typeof component.state !== 'object' ||
     Array.isArray(component.state)
   ) {
-    errors.push(
-      'Component state must be an object.'
-    );
+    errors.push('Component state must be an object.');
   } else {
-    if (
-      typeof component.state.visible !== 'boolean'
-    ) {
-      errors.push(
-        'Component state.visible must be boolean.'
-      );
+    if (typeof component.state.visible !== 'boolean') {
+      errors.push('Component state.visible must be boolean.');
     }
 
-    if (
-      typeof component.state.enabled !== 'boolean'
-    ) {
-      errors.push(
-        'Component state.enabled must be boolean.'
-      );
+    if (typeof component.state.enabled !== 'boolean') {
+      errors.push('Component state.enabled must be boolean.');
     }
 
-    if (
-      typeof component.state.loading !== 'boolean'
-    ) {
-      errors.push(
-        'Component state.loading must be boolean.'
-      );
+    if (typeof component.state.loading !== 'boolean') {
+      errors.push('Component state.loading must be boolean.');
     }
   }
 
@@ -1378,54 +1232,30 @@ function aerpValidateComponentDefinition(
     typeof component.metadata !== 'object' ||
     Array.isArray(component.metadata)
   ) {
-    errors.push(
-      'Component metadata must be an object.'
-    );
+    errors.push('Component metadata must be an object.');
   }
 
-  if (
-    component.preset &&
-    component.preset.component !==
-      component.component
-  ) {
-    errors.push(
-      'Component type does not match preset type.'
-    );
+  if (component.preset && component.preset.component !== component.component) {
+    errors.push('Component type does not match preset type.');
   }
 
-  if (
-    component.preset &&
-    component.preset.variant !==
-      component.variant
-  ) {
-    errors.push(
-      'Component variant does not match preset variant.'
-    );
+  if (component.preset && component.preset.variant !== component.variant) {
+    errors.push('Component variant does not match preset variant.');
   }
 
   const unresolvedReferences = [];
 
-  aerpFindUnresolvedTokenReferences_(
-    component.preset,
-    'component.preset',
-    unresolvedReferences
-  );
+  aerpFindUnresolvedTokenReferences_(component.preset, 'component.preset', unresolvedReferences);
 
-  unresolvedReferences.forEach(function(reference) {
-    errors.push(
-      'Unresolved token reference: ' +
-      reference
-    );
+  unresolvedReferences.forEach(function (reference) {
+    errors.push('Unresolved token reference: ' + reference);
   });
 
   return {
     ok: errors.length === 0,
-    componentId:
-      component.id || null,
-    component:
-      component.component || null,
-    variant:
-      component.variant || null,
+    componentId: component.id || null,
+    component: component.component || null,
+    variant: component.variant || null,
     errors: errors
   };
 }
@@ -1511,18 +1341,12 @@ function aerpValidateUITheme() {
     'components.emptyState.default'
   ];
 
-  requiredPaths.forEach(function(path) {
+  requiredPaths.forEach(function (path) {
     try {
       const value = aerpGetThemeToken(path);
 
-      if (
-        value === null ||
-        value === undefined ||
-        value === ''
-      ) {
-        errors.push(
-          'Empty theme token: ' + path
-        );
+      if (value === null || value === undefined || value === '') {
+        errors.push('Empty theme token: ' + path);
       }
     } catch (error) {
       errors.push(error.message);
@@ -1544,7 +1368,6 @@ function aerpValidateUITheme() {
   };
 }
 
-
 /* ============================================================
  * 3. TESTS
  * ============================================================
@@ -1559,8 +1382,7 @@ function aerpValidateUITheme() {
  * @return {Object} Test result.
  */
 function testAerpUITheme() {
-  const validation =
-    aerpValidateUITheme();
+  const validation = aerpValidateUITheme();
 
   const result = {
     ok: validation.ok,
@@ -1590,105 +1412,69 @@ function testAerpUITheme() {
       presets: []
     },
 
-    validationErrors:
-      validation.errors.slice()
+    validationErrors: validation.errors.slice()
   };
 
   try {
-    const theme =
-      aerpGetTheme();
+    const theme = aerpGetTheme();
 
-    result.tests.themeAvailable =
-      Boolean(theme);
+    result.tests.themeAvailable = Boolean(theme);
 
-    result.tests.primaryColorAvailable =
-      theme.colors.brand.primary === '#2563EB';
+    result.tests.primaryColorAvailable = theme.colors.brand.primary === '#2563EB';
 
-    result.tests.spacingAvailable =
-      theme.spacing.md === 16;
+    result.tests.spacingAvailable = theme.spacing.md === 16;
 
-    result.tests.typographyAvailable =
-      Boolean(
-        theme.typography.styles.headingLarge
-      );
+    result.tests.typographyAvailable = Boolean(theme.typography.styles.headingLarge);
 
     result.tests.immutabilityEnabled =
-      Object.isFrozen(theme) &&
-      Object.isFrozen(theme.colors) &&
-      Object.isFrozen(theme.components);
+      Object.isFrozen(theme) && Object.isFrozen(theme.colors) && Object.isFrozen(theme.components);
 
-    result.tests.componentRegistryAvailable =
-      Boolean(
-        theme.components &&
-        theme.components.card &&
-        theme.components.card.kpi
-      );
+    result.tests.componentRegistryAvailable = Boolean(
+      theme.components && theme.components.card && theme.components.card.kpi
+    );
 
-    const componentPaths =
-      aerpListComponentPresets();
+    const componentPaths = aerpListComponentPresets();
 
-    result.registry.presetCount =
-      componentPaths.length;
+    result.registry.presetCount = componentPaths.length;
 
-    result.registry.presets =
-      componentPaths;
+    result.registry.presets = componentPaths;
 
-    result.tests.componentListAvailable =
-      componentPaths.length >= 20;
+    result.tests.componentListAvailable = componentPaths.length >= 20;
 
-    const kpiPreset =
-      aerpGetComponentPreset('card.kpi');
+    const kpiPreset = aerpGetComponentPreset('card.kpi');
 
-    result.tests.kpiPresetResolved =
-      kpiPreset.component === 'card' &&
-      kpiPreset.variant === 'kpi';
+    result.tests.kpiPresetResolved = kpiPreset.component === 'card' && kpiPreset.variant === 'kpi';
 
-    result.tests.inheritanceResolved =
-      Boolean(
-        kpiPreset.interaction &&
-        kpiPreset.interaction.hoverShadow
-      );
+    result.tests.inheritanceResolved = Boolean(
+      kpiPreset.interaction && kpiPreset.interaction.hoverShadow
+    );
 
     result.tests.tokenReferencesResolved =
-      kpiPreset.container.background ===
-        theme.colors.surface.default &&
-      kpiPreset.container.padding ===
-        theme.layout.card.defaultPadding &&
-      kpiPreset.value.color ===
-        theme.colors.text.primary;
+      kpiPreset.container.background === theme.colors.surface.default &&
+      kpiPreset.container.padding === theme.layout.card.defaultPadding &&
+      kpiPreset.value.color === theme.colors.text.primary;
 
     result.tests.resolvedPresetImmutable =
       Object.isFrozen(kpiPreset) &&
       Object.isFrozen(kpiPreset.container) &&
       Object.isFrozen(kpiPreset.trend);
-
   } catch (error) {
     result.ok = false;
 
-    result.validationErrors.push(
-      '[AERP-027] Test execution error: ' +
-      error.message
-    );
+    result.validationErrors.push('[AERP-027] Test execution error: ' + error.message);
   }
 
-  const testValues =
-    Object.keys(result.tests).map(function(testName) {
-      return result.tests[testName];
-    });
+  const testValues = Object.keys(result.tests).map(function (testName) {
+    return result.tests[testName];
+  });
 
   result.ok =
     validation.ok &&
-    testValues.every(function(value) {
+    testValues.every(function (value) {
       return value === true;
     });
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   return result;
 }
@@ -1728,42 +1514,27 @@ function testAerpComponentFactory() {
   };
 
   try {
-    const generatedComponent =
-      aerpCreateComponent(
-        'card',
-        'kpi',
-        {
-          title: 'Ventas del mes',
-          value: '€58.240',
-          subtitle: 'Facturación acumulada',
-          icon: 'payments'
-        }
-      );
+    const generatedComponent = aerpCreateComponent('card', 'kpi', {
+      title: 'Ventas del mes',
+      value: '€58.240',
+      subtitle: 'Facturación acumulada',
+      icon: 'payments'
+    });
 
-    result.samples.generatedComponentId =
-      generatedComponent.id;
+    result.samples.generatedComponentId = generatedComponent.id;
 
     result.tests.componentCreated =
-      generatedComponent.component === 'card' &&
-      generatedComponent.variant === 'kpi';
+      generatedComponent.component === 'card' && generatedComponent.variant === 'kpi';
 
     result.tests.generatedIdAvailable =
-      typeof generatedComponent.id === 'string' &&
-      generatedComponent.id.indexOf(
-        'card-kpi-'
-      ) === 0;
+      typeof generatedComponent.id === 'string' && generatedComponent.id.indexOf('card-kpi-') === 0;
 
     result.tests.presetResolved =
-      generatedComponent.preset
-        .container
-        .background ===
-      AERP_UI_THEME.colors.surface.default;
+      generatedComponent.preset.container.background === AERP_UI_THEME.colors.surface.default;
 
     result.tests.propertiesPreserved =
-      generatedComponent.properties.title ===
-        'Ventas del mes' &&
-      generatedComponent.properties.value ===
-        '€58.240';
+      generatedComponent.properties.title === 'Ventas del mes' &&
+      generatedComponent.properties.value === '€58.240';
 
     result.tests.stateNormalized =
       generatedComponent.state.visible === true &&
@@ -1771,128 +1542,66 @@ function testAerpComponentFactory() {
       generatedComponent.state.loading === false;
 
     result.tests.metadataAvailable =
-      generatedComponent.metadata.module ===
-        'AERP-027' &&
-      generatedComponent.metadata.source ===
-        'ComponentFactory' &&
-      generatedComponent.metadata.presetPath ===
-        'card.kpi';
+      generatedComponent.metadata.module === 'AERP-027' &&
+      generatedComponent.metadata.source === 'ComponentFactory' &&
+      generatedComponent.metadata.presetPath === 'card.kpi';
 
-    result.tests.componentImmutable =
-      Object.isFrozen(
-        generatedComponent
-      );
+    result.tests.componentImmutable = Object.isFrozen(generatedComponent);
 
     result.tests.nestedObjectsImmutable =
-      Object.isFrozen(
-        generatedComponent.preset
-      ) &&
-      Object.isFrozen(
-        generatedComponent.properties
-      ) &&
-      Object.isFrozen(
-        generatedComponent.state
-      ) &&
-      Object.isFrozen(
-        generatedComponent.metadata
-      );
+      Object.isFrozen(generatedComponent.preset) &&
+      Object.isFrozen(generatedComponent.properties) &&
+      Object.isFrozen(generatedComponent.state) &&
+      Object.isFrozen(generatedComponent.metadata);
 
-    const customComponent =
-      aerpCreateComponent(
-        'badge',
-        'success',
-        {
-          id: 'status-active',
-          label: 'ACTIVO',
-          visible: false,
-          enabled: true,
-          loading: false
-        }
-      );
+    const customComponent = aerpCreateComponent('badge', 'success', {
+      id: 'status-active',
+      label: 'ACTIVO',
+      visible: false,
+      enabled: true,
+      loading: false
+    });
 
-    result.samples.customComponentId =
-      customComponent.id;
+    result.samples.customComponentId = customComponent.id;
 
-    result.tests.customIdPreserved =
-      customComponent.id ===
-      'status-active';
+    result.tests.customIdPreserved = customComponent.id === 'status-active';
 
     result.tests.reservedPropertiesRemoved =
-      !Object.prototype.hasOwnProperty.call(
-        customComponent.properties,
-        'id'
-      ) &&
-      !Object.prototype.hasOwnProperty.call(
-        customComponent.properties,
-        'visible'
-      ) &&
-      !Object.prototype.hasOwnProperty.call(
-        customComponent.properties,
-        'enabled'
-      ) &&
-      !Object.prototype.hasOwnProperty.call(
-        customComponent.properties,
-        'loading'
-      );
+      !Object.prototype.hasOwnProperty.call(customComponent.properties, 'id') &&
+      !Object.prototype.hasOwnProperty.call(customComponent.properties, 'visible') &&
+      !Object.prototype.hasOwnProperty.call(customComponent.properties, 'enabled') &&
+      !Object.prototype.hasOwnProperty.call(customComponent.properties, 'loading');
 
-    const validation =
-      aerpValidateComponentDefinition(
-        generatedComponent
-      );
+    const validation = aerpValidateComponentDefinition(generatedComponent);
 
-    result.tests.validationPassed =
-      validation.ok === true &&
-      validation.errors.length === 0;
-
+    result.tests.validationPassed = validation.ok === true && validation.errors.length === 0;
   } catch (error) {
-    result.errors.push(
-      '[Factory creation test] ' +
-      error.message
-    );
+    result.errors.push('[Factory creation test] ' + error.message);
   }
 
   try {
-    aerpCreateComponent(
-      'card',
-      'nonExistingVariant',
-      {}
-    );
-
+    aerpCreateComponent('card', 'nonExistingVariant', {});
   } catch (error) {
-    result.tests.invalidPresetRejected =
-      true;
+    result.tests.invalidPresetRejected = true;
   }
 
   try {
-    aerpCreateComponent(
-      'card',
-      'kpi',
-      'invalid properties'
-    );
-
+    aerpCreateComponent('card', 'kpi', 'invalid properties');
   } catch (error) {
-    result.tests.invalidPropertiesRejected =
-      true;
+    result.tests.invalidPropertiesRejected = true;
   }
 
-  const testValues =
-    Object.keys(result.tests).map(function(testName) {
-      return result.tests[testName];
-    });
+  const testValues = Object.keys(result.tests).map(function (testName) {
+    return result.tests[testName];
+  });
 
   result.ok =
     result.errors.length === 0 &&
-    testValues.every(function(value) {
+    testValues.every(function (value) {
       return value === true;
     });
 
-  Logger.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   return result;
 }
@@ -1910,52 +1619,35 @@ function testAerpComponentFactory() {
  * @return {Object} Resolved component preset.
  * @private
  */
-function aerpResolveComponentPreset_(
-  preset,
-  inheritanceStack
-) {
+function aerpResolveComponentPreset_(preset, inheritanceStack) {
   let resolvedPreset = {};
 
   if (preset.extends) {
     const parentPath = preset.extends;
 
-    if (
-      inheritanceStack.indexOf(parentPath) !== -1
-    ) {
+    if (inheritanceStack.indexOf(parentPath) !== -1) {
       throw new Error(
         '[AERP-027] Circular component inheritance detected: ' +
-        inheritanceStack
-          .concat([parentPath])
-          .join(' -> ')
+          inheritanceStack.concat([parentPath]).join(' -> ')
       );
     }
 
-    const parentPreset =
-      aerpGetThemeToken(parentPath);
+    const parentPreset = aerpGetThemeToken(parentPath);
 
-    resolvedPreset =
-      aerpResolveComponentPreset_(
-        parentPreset,
-        inheritanceStack.concat([parentPath])
-      );
+    resolvedPreset = aerpResolveComponentPreset_(
+      parentPreset,
+      inheritanceStack.concat([parentPath])
+    );
   }
 
-  const childPreset =
-    aerpCloneObject_(preset);
+  const childPreset = aerpCloneObject_(preset);
 
   delete childPreset.extends;
 
-  resolvedPreset =
-    aerpDeepMerge_(
-      resolvedPreset,
-      childPreset
-    );
+  resolvedPreset = aerpDeepMerge_(resolvedPreset, childPreset);
 
-  return aerpResolveTokenReferences_(
-    resolvedPreset
-  );
+  return aerpResolveTokenReferences_(resolvedPreset);
 }
-
 
 /**
  * Resolves all theme token references inside a value.
@@ -1970,33 +1662,23 @@ function aerpResolveComponentPreset_(
  * @private
  */
 function aerpResolveTokenReferences_(value) {
-  if (
-    typeof value === 'string' &&
-    value.charAt(0) === '$'
-  ) {
-    const tokenPath =
-      value.substring(1);
+  if (typeof value === 'string' && value.charAt(0) === '$') {
+    const tokenPath = value.substring(1);
 
     return aerpGetThemeToken(tokenPath);
   }
 
   if (Array.isArray(value)) {
-    return value.map(function(item) {
+    return value.map(function (item) {
       return aerpResolveTokenReferences_(item);
     });
   }
 
-  if (
-    value !== null &&
-    typeof value === 'object'
-  ) {
+  if (value !== null && typeof value === 'object') {
     const resolvedObject = {};
 
-    Object.keys(value).forEach(function(key) {
-      resolvedObject[key] =
-        aerpResolveTokenReferences_(
-          value[key]
-        );
+    Object.keys(value).forEach(function (key) {
+      resolvedObject[key] = aerpResolveTokenReferences_(value[key]);
     });
 
     return resolvedObject;
@@ -2004,7 +1686,6 @@ function aerpResolveTokenReferences_(value) {
 
   return value;
 }
-
 
 /**
  * Deeply merges two objects.
@@ -2017,33 +1698,23 @@ function aerpResolveTokenReferences_(value) {
  * @private
  */
 function aerpDeepMerge_(target, source) {
-  const output =
-    aerpCloneObject_(target);
+  const output = aerpCloneObject_(target);
 
-  Object.keys(source).forEach(function(key) {
+  Object.keys(source).forEach(function (key) {
     const sourceValue = source[key];
     const targetValue = output[key];
 
-    if (
-      aerpIsPlainObject_(sourceValue) &&
-      aerpIsPlainObject_(targetValue)
-    ) {
-      output[key] =
-        aerpDeepMerge_(
-          targetValue,
-          sourceValue
-        );
+    if (aerpIsPlainObject_(sourceValue) && aerpIsPlainObject_(targetValue)) {
+      output[key] = aerpDeepMerge_(targetValue, sourceValue);
 
       return;
     }
 
-    output[key] =
-      aerpCloneObject_(sourceValue);
+    output[key] = aerpCloneObject_(sourceValue);
   });
 
   return output;
 }
-
 
 /**
  * Creates a recursive clone of supported values.
@@ -2054,7 +1725,7 @@ function aerpDeepMerge_(target, source) {
  */
 function aerpCloneObject_(value) {
   if (Array.isArray(value)) {
-    return value.map(function(item) {
+    return value.map(function (item) {
       return aerpCloneObject_(item);
     });
   }
@@ -2062,11 +1733,8 @@ function aerpCloneObject_(value) {
   if (aerpIsPlainObject_(value)) {
     const clone = {};
 
-    Object.keys(value).forEach(function(key) {
-      clone[key] =
-        aerpCloneObject_(
-          value[key]
-        );
+    Object.keys(value).forEach(function (key) {
+      clone[key] = aerpCloneObject_(value[key]);
     });
 
     return clone;
@@ -2074,7 +1742,6 @@ function aerpCloneObject_(value) {
 
   return value;
 }
-
 
 /**
  * Checks whether a value is a plain object.
@@ -2084,13 +1751,8 @@ function aerpCloneObject_(value) {
  * @private
  */
 function aerpIsPlainObject_(value) {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value)
-  );
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
-
 
 /**
  * Collects all final component preset paths.
@@ -2103,18 +1765,11 @@ function aerpIsPlainObject_(value) {
  * @param {Array<string>} output Collected paths.
  * @private
  */
-function aerpCollectComponentPaths_(
-  node,
-  parentPath,
-  output
-) {
-  Object.keys(node).forEach(function(key) {
+function aerpCollectComponentPaths_(node, parentPath, output) {
+  Object.keys(node).forEach(function (key) {
     const value = node[key];
 
-    const currentPath =
-      parentPath
-        ? parentPath + '.' + key
-        : key;
+    const currentPath = parentPath ? parentPath + '.' + key : key;
 
     if (
       aerpIsPlainObject_(value) &&
@@ -2126,11 +1781,7 @@ function aerpCollectComponentPaths_(
     }
 
     if (aerpIsPlainObject_(value)) {
-      aerpCollectComponentPaths_(
-        value,
-        currentPath,
-        output
-      );
+      aerpCollectComponentPaths_(value, currentPath, output);
     }
   });
 }
@@ -2148,41 +1799,21 @@ function aerpCollectComponentPaths_(
  * @throws {Error} When invalid.
  * @private
  */
-function aerpNormalizeComponentIdentity_(
-  value,
-  fieldName
-) {
-  if (
-    typeof value !== 'string' ||
-    value.trim() === ''
-  ) {
-    throw new Error(
-      '[AERP-027] Component ' +
-      fieldName +
-      ' must be a non-empty string.'
-    );
+function aerpNormalizeComponentIdentity_(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error('[AERP-027] Component ' + fieldName + ' must be a non-empty string.');
   }
 
-  const normalizedValue =
-    value.trim();
+  const normalizedValue = value.trim();
 
-  const validPattern =
-    /^[A-Za-z][A-Za-z0-9_-]*$/;
+  const validPattern = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
-  if (
-    !validPattern.test(normalizedValue)
-  ) {
-    throw new Error(
-      '[AERP-027] Invalid component ' +
-      fieldName +
-      ': ' +
-      normalizedValue
-    );
+  if (!validPattern.test(normalizedValue)) {
+    throw new Error('[AERP-027] Invalid component ' + fieldName + ': ' + normalizedValue);
   }
 
   return normalizedValue;
 }
-
 
 /**
  * Normalizes custom component properties.
@@ -2192,29 +1823,17 @@ function aerpNormalizeComponentIdentity_(
  * @throws {Error} When properties are invalid.
  * @private
  */
-function aerpNormalizeComponentProperties_(
-  properties
-) {
-  if (
-    properties === undefined ||
-    properties === null
-  ) {
+function aerpNormalizeComponentProperties_(properties) {
+  if (properties === undefined || properties === null) {
     return {};
   }
 
-  if (
-    !aerpIsPlainObject_(properties)
-  ) {
-    throw new Error(
-      '[AERP-027] Component properties must be a plain object.'
-    );
+  if (!aerpIsPlainObject_(properties)) {
+    throw new Error('[AERP-027] Component properties must be a plain object.');
   }
 
-  return aerpCloneObject_(
-    properties
-  );
+  return aerpCloneObject_(properties);
 }
-
 
 /**
  * Removes properties managed internally by the factory.
@@ -2226,13 +1845,8 @@ function aerpNormalizeComponentProperties_(
  * @return {Object} Public component properties.
  * @private
  */
-function aerpRemoveReservedComponentProperties_(
-  properties
-) {
-  const cleanProperties =
-    aerpCloneObject_(
-      properties
-    );
+function aerpRemoveReservedComponentProperties_(properties) {
+  const cleanProperties = aerpCloneObject_(properties);
 
   delete cleanProperties.id;
   delete cleanProperties.visible;
@@ -2241,7 +1855,6 @@ function aerpRemoveReservedComponentProperties_(
 
   return cleanProperties;
 }
-
 
 /**
  * Generates a unique component identifier.
@@ -2254,24 +1867,12 @@ function aerpRemoveReservedComponentProperties_(
  * @return {string} Generated component id.
  * @private
  */
-function aerpGenerateComponentId_(
-  type,
-  variant
-) {
-  const timestamp =
-    new Date().getTime();
+function aerpGenerateComponentId_(type, variant) {
+  const timestamp = new Date().getTime();
 
-  const randomSuffix =
-    Math.random()
-      .toString(36)
-      .substring(2, 6);
+  const randomSuffix = Math.random().toString(36).substring(2, 6);
 
-  return [
-    type,
-    variant,
-    timestamp,
-    randomSuffix
-  ].join('-');
+  return [type, variant, timestamp, randomSuffix].join('-');
 }
 
 /* ============================================================
@@ -2289,24 +1890,17 @@ function aerpValidateThemeMetadata_(errors) {
   const meta = AERP_UI_THEME.meta;
 
   if (meta.module !== 'AERP-027') {
-    errors.push(
-      'Invalid module identifier in theme metadata.'
-    );
+    errors.push('Invalid module identifier in theme metadata.');
   }
 
   if (meta.version !== AERP_UI_THEME_VERSION) {
-    errors.push(
-      'Theme metadata version does not match module version.'
-    );
+    errors.push('Theme metadata version does not match module version.');
   }
 
   if (meta.status !== 'ACTIVE') {
-    errors.push(
-      'UI Theme status must be ACTIVE.'
-    );
+    errors.push('UI Theme status must be ACTIVE.');
   }
 }
-
 
 /**
  * Validates hexadecimal and rgba color tokens.
@@ -2317,27 +1911,18 @@ function aerpValidateThemeMetadata_(errors) {
 function aerpValidateColorTokens_(errors) {
   const colorGroups = AERP_UI_THEME.colors;
 
-  Object.keys(colorGroups).forEach(function(groupName) {
+  Object.keys(colorGroups).forEach(function (groupName) {
     const group = colorGroups[groupName];
 
-    Object.keys(group).forEach(function(tokenName) {
+    Object.keys(group).forEach(function (tokenName) {
       const colorValue = group[tokenName];
 
-      if (
-        typeof colorValue !== 'string' ||
-        !aerpIsValidColor_(colorValue)
-      ) {
-        errors.push(
-          'Invalid color token: colors.' +
-          groupName +
-          '.' +
-          tokenName
-        );
+      if (typeof colorValue !== 'string' || !aerpIsValidColor_(colorValue)) {
+        errors.push('Invalid color token: colors.' + groupName + '.' + tokenName);
       }
     });
   });
 }
-
 
 /**
  * Validates that the spacing scale is ordered.
@@ -2346,36 +1931,20 @@ function aerpValidateColorTokens_(errors) {
  * @private
  */
 function aerpValidateSpacingScale_(errors) {
-  const spacingKeys = [
-    'none',
-    'xxs',
-    'xs',
-    'sm',
-    'md',
-    'lg',
-    'xl',
-    'xxl',
-    'xxxl'
-  ];
+  const spacingKeys = ['none', 'xxs', 'xs', 'sm', 'md', 'lg', 'xl', 'xxl', 'xxxl'];
 
   let previousValue = -1;
 
-  spacingKeys.forEach(function(key) {
+  spacingKeys.forEach(function (key) {
     const value = AERP_UI_THEME.spacing[key];
 
-    if (
-      typeof value !== 'number' ||
-      value < previousValue
-    ) {
-      errors.push(
-        'Invalid spacing scale at: spacing.' + key
-      );
+    if (typeof value !== 'number' || value < previousValue) {
+      errors.push('Invalid spacing scale at: spacing.' + key);
     }
 
     previousValue = value;
   });
 }
-
 
 /**
  * Validates that the radius scale is ordered.
@@ -2384,29 +1953,15 @@ function aerpValidateSpacingScale_(errors) {
  * @private
  */
 function aerpValidateRadiusScale_(errors) {
-  const radiusKeys = [
-    'none',
-    'xs',
-    'sm',
-    'md',
-    'lg',
-    'xl',
-    'xxl',
-    'pill'
-  ];
+  const radiusKeys = ['none', 'xs', 'sm', 'md', 'lg', 'xl', 'xxl', 'pill'];
 
   let previousValue = -1;
 
-  radiusKeys.forEach(function(key) {
+  radiusKeys.forEach(function (key) {
     const value = AERP_UI_THEME.radius[key];
 
-    if (
-      typeof value !== 'number' ||
-      value < previousValue
-    ) {
-      errors.push(
-        'Invalid radius scale at: radius.' + key
-      );
+    if (typeof value !== 'number' || value < previousValue) {
+      errors.push('Invalid radius scale at: radius.' + key);
     }
 
     previousValue = value;
@@ -2419,58 +1974,34 @@ function aerpValidateRadiusScale_(errors) {
  * @private
  */
 function aerpValidateComponentRegistry_(errors) {
-  const presetPaths =
-    aerpListComponentPresets();
+  const presetPaths = aerpListComponentPresets();
 
   if (presetPaths.length === 0) {
-    errors.push(
-      'Component Registry does not contain presets.'
-    );
+    errors.push('Component Registry does not contain presets.');
 
     return;
   }
 
-  presetPaths.forEach(function(componentPath) {
+  presetPaths.forEach(function (componentPath) {
     try {
-      const preset =
-        aerpGetComponentPreset(componentPath);
+      const preset = aerpGetComponentPreset(componentPath);
 
-      if (
-        !preset.component ||
-        !preset.variant
-      ) {
-        errors.push(
-          'Component preset lacks identity: ' +
-          componentPath
-        );
+      if (!preset.component || !preset.variant) {
+        errors.push('Component preset lacks identity: ' + componentPath);
       }
 
       const unresolvedReferences = [];
 
-      aerpFindUnresolvedTokenReferences_(
-        preset,
-        componentPath,
-        unresolvedReferences
-      );
+      aerpFindUnresolvedTokenReferences_(preset, componentPath, unresolvedReferences);
 
-      unresolvedReferences.forEach(function(reference) {
-        errors.push(
-          'Unresolved component token: ' +
-          reference
-        );
+      unresolvedReferences.forEach(function (reference) {
+        errors.push('Unresolved component token: ' + reference);
       });
-
     } catch (error) {
-      errors.push(
-        'Invalid component preset "' +
-        componentPath +
-        '": ' +
-        error.message
-      );
+      errors.push('Invalid component preset "' + componentPath + '": ' + error.message);
     }
   });
 }
-
 
 /**
  * Finds unresolved "$token" references recursively.
@@ -2480,44 +2011,24 @@ function aerpValidateComponentRegistry_(errors) {
  * @param {Array<string>} output Found references.
  * @private
  */
-function aerpFindUnresolvedTokenReferences_(
-  value,
-  currentPath,
-  output
-) {
-  if (
-    typeof value === 'string' &&
-    value.charAt(0) === '$'
-  ) {
-    output.push(
-      currentPath + ' = ' + value
-    );
+function aerpFindUnresolvedTokenReferences_(value, currentPath, output) {
+  if (typeof value === 'string' && value.charAt(0) === '$') {
+    output.push(currentPath + ' = ' + value);
 
     return;
   }
 
   if (Array.isArray(value)) {
-    value.forEach(function(item, index) {
-      aerpFindUnresolvedTokenReferences_(
-        item,
-        currentPath + '[' + index + ']',
-        output
-      );
+    value.forEach(function (item, index) {
+      aerpFindUnresolvedTokenReferences_(item, currentPath + '[' + index + ']', output);
     });
 
     return;
   }
 
-  if (
-    value !== null &&
-    typeof value === 'object'
-  ) {
-    Object.keys(value).forEach(function(key) {
-      aerpFindUnresolvedTokenReferences_(
-        value[key],
-        currentPath + '.' + key,
-        output
-      );
+  if (value !== null && typeof value === 'object') {
+    Object.keys(value).forEach(function (key) {
+      aerpFindUnresolvedTokenReferences_(value[key], currentPath + '.' + key, output);
     });
   }
 }
@@ -2530,18 +2041,12 @@ function aerpFindUnresolvedTokenReferences_(
  * @private
  */
 function aerpIsValidColor_(value) {
-  const hexPattern =
-    /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/;
+  const hexPattern = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$/;
 
-  const rgbaPattern =
-    /^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\)$/;
+  const rgbaPattern = /^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\)$/;
 
-  return (
-    hexPattern.test(value) ||
-    rgbaPattern.test(value)
-  );
+  return hexPattern.test(value) || rgbaPattern.test(value);
 }
-
 
 /* ============================================================
  * 7. PRIVATE IMMUTABILITY HELPERS
@@ -2559,15 +2064,11 @@ function aerpIsValidColor_(value) {
  * @private
  */
 function aerpDeepFreeze_(value) {
-  if (
-    value === null ||
-    typeof value !== 'object' ||
-    Object.isFrozen(value)
-  ) {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
     return value;
   }
 
-  Object.getOwnPropertyNames(value).forEach(function(propertyName) {
+  Object.getOwnPropertyNames(value).forEach(function (propertyName) {
     const propertyValue = value[propertyName];
 
     aerpDeepFreeze_(propertyValue);
