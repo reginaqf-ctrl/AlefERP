@@ -8,7 +8,6 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 import { clearTimeout, setTimeout } from 'node:timers';
-import { setTimeout as delay } from 'node:timers/promises';
 import { URL } from 'node:url';
 
 import {
@@ -88,17 +87,67 @@ function processIsAbsent(pid) {
   }
 }
 
+function preloadModule(source) {
+  return `data:text/javascript,${encodeURIComponent(source)}`;
+}
+
+function bounded(promise, timeoutMs, code) {
+  let timeoutHandle;
+  const timeout = new Promise((_resolve, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error(code)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutHandle));
+}
+
+const EARLY_IPC_PRELOAD = preloadModule(`
+const originalSend = process.send?.bind(process);
+if (originalSend) {
+  process.send = function (message, ...args) {
+    if (message?.type === 'AERP_QA_GLOBALS_READY') {
+      process.emit('message', {
+        type: 'AERP_QA_GLOBALS_INTERRUPT',
+        schemaVersion: '${IPC_SCHEMA_VERSION}',
+        signal: 'SIGINT'
+      });
+    }
+    return originalSend(message, ...args);
+  };
+}
+`);
+
+const SLOW_START_PRELOAD = preloadModule(`
+await new Promise(resolve => setTimeout(resolve, 1500));
+`);
+
+const POSIX_SIGNAL_READY_PRELOAD = preloadModule(`
+import { writeSync } from 'node:fs';
+const originalOnce = process.once.bind(process);
+let sigintRegistered = false;
+let readinessSent = false;
+process.once = function (event, listener) {
+  const result = originalOnce(event, listener);
+  if (event === 'SIGINT') sigintRegistered = true;
+  if (event === 'SIGTERM' && sigintRegistered && !readinessSent) {
+    readinessSent = true;
+    writeSync(3, 'AERP_QA_GLOBALS_SIGNAL_READY\\n');
+  }
+  return result;
+};
+`);
+
 async function runControlledIpcChild(
   onReady,
   timeoutMs = 15_000,
   completionEvent = 'close',
-  beforeReady = null
+  beforeReady = null,
+  execArgv = []
 ) {
   const script = path.resolve('scripts/qa/audit-globals.mjs');
   const child = fork(script, [], {
     cwd: path.resolve('.'),
     silent: true,
-    windowsHide: true
+    windowsHide: true,
+    execArgv
   });
   const stdout = [];
   const stderr = [];
@@ -643,22 +692,34 @@ test('invalid IPC and parent disconnect terminate bounded and fail closed', asyn
 });
 
 test('IPC message before READY is rejected by the real child', async () => {
-  const request = {
-    type: 'AERP_QA_GLOBALS_INTERRUPT',
-    schemaVersion: IPC_SCHEMA_VERSION,
-    signal: 'SIGINT'
-  };
-  const result = await runControlledIpcChild(
-    () => {},
-    15_000,
-    'close',
-    child => child.send(request)
-  );
+  const result = await runControlledIpcChild(() => {}, 15_000, 'close', null, [
+    '--import',
+    EARLY_IPC_PRELOAD
+  ]);
   assert.equal(result.code, 2);
   assert.equal(result.signal, null);
   const evidence = JSON.parse(await readFile(path.resolve('.qa-output/globals-evidence.json')));
   assert.equal(evidence.failureCode, 'IPC_MESSAGE_BEFORE_READY');
   assert.equal(evidence.result, 'failed');
+});
+
+test('controlled IPC waits for deliberately delayed child readiness', async () => {
+  const result = await runControlledIpcChild(
+    child => {
+      child.send({
+        type: 'AERP_QA_GLOBALS_INTERRUPT',
+        schemaVersion: IPC_SCHEMA_VERSION,
+        signal: 'SIGINT'
+      });
+    },
+    15_000,
+    'close',
+    null,
+    ['--import', SLOW_START_PRELOAD]
+  );
+  assert.equal(result.code, 130);
+  assert.equal(result.signal, null);
+  assert.equal(processIsAbsent(result.pid), true);
 });
 
 test('interruption preserves its exit when persistence is unavailable', async t => {
@@ -711,15 +772,37 @@ test(
       ['SIGINT', 130],
       ['SIGTERM', 143]
     ]) {
-      const child = spawn(process.execPath, [script], {
+      const child = spawn(process.execPath, ['--import', POSIX_SIGNAL_READY_PRELOAD, script], {
         cwd: path.resolve('.'),
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
+        env: process.env,
+        windowsHide: true,
+        argv0: process.execPath,
+        shell: false
       });
-      await delay(100);
-      assert.equal(child.kill(signal), true);
-      const [code, closedSignal] = await once(child, 'close');
-      assert.equal(code, expected);
-      assert.equal(closedSignal, null);
+      const completion = once(child, 'close');
+      try {
+        const [marker] = await bounded(
+          once(child.stdio[3], 'data'),
+          15_000,
+          'POSIX_SIGNAL_HANDLER_READY_TIMEOUT'
+        );
+        assert.equal(marker.toString('utf8'), 'AERP_QA_GLOBALS_SIGNAL_READY\n');
+        assert.equal(child.kill(signal), true);
+        const [code, closedSignal] = await bounded(
+          completion,
+          15_000,
+          'POSIX_SIGNAL_CHILD_TIMEOUT'
+        );
+        assert.equal(code, expected);
+        assert.equal(closedSignal, null);
+      } finally {
+        child.removeAllListeners();
+        child.stdout?.removeAllListeners();
+        child.stderr?.removeAllListeners();
+        child.stdio[3]?.removeAllListeners();
+        if (!processIsAbsent(child.pid)) child.kill('SIGKILL');
+      }
     }
   }
 );
