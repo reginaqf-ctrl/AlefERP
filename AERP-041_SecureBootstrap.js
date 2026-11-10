@@ -356,14 +356,41 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
       lock.releaseLock();
     }
   }
-  function matchingRecord(input, allowedStatuses) {
+  function consumedRecoveryEligible(record, identity) {
+    const store = properties();
+    const state = JSON.parse(store.getProperty('AERP041:v1:state') || 'null');
+    const claim = JSON.parse(store.getProperty(prefix + 'claim') || 'null');
+    return Boolean(
+      state &&
+      ['INCOMPLETE', 'COMPLETE'].includes(state.status) &&
+      state.sourceId === binding.sourceId &&
+      state.boundTargetId === binding.targetId &&
+      state.tenantId === binding.tenantId &&
+      claim &&
+      claim.version === 1 &&
+      claim.status === 'CONSUMED' &&
+      claim.confirmationId === record.confirmationId &&
+      claim.subjectId === identity.subjectId &&
+      claim.tenantId === binding.tenantId &&
+      record.status === 'CONSUMED' &&
+      record.sourceId === binding.sourceId &&
+      record.targetId === binding.targetId &&
+      record.tenantId === binding.tenantId &&
+      record.issuer === identity.issuer &&
+      record.subjectId === identity.subjectId &&
+      record.planDigest === planDigest() &&
+      record.configurationDigest === configurationDigest()
+    );
+  }
+
+  function matchingRecord(input, allowedStatuses, allowExpired) {
     const source = input || {};
     const evidence = source.evidence || source;
     const record = readRecord(evidence.confirmationId);
     const identity = principal();
     if (
       allowedStatuses.indexOf(record.status) === -1 ||
-      record.expiresAt < nowSeconds() ||
+      (record.expiresAt < nowSeconds() && allowExpired !== true) ||
       record.intent !== source.intent ||
       record.sourceId !== binding.sourceId ||
       record.targetId !== binding.targetId ||
@@ -381,7 +408,13 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
 
   function verifyConfirmation(input) {
     try {
-      const checked = matchingRecord(input, ['PENDING', 'CLAIMED']);
+      let checked;
+      try {
+        checked = matchingRecord(input, ['PENDING', 'CLAIMED']);
+      } catch (_error) {
+        checked = matchingRecord(input, ['CONSUMED'], true);
+        if (!consumedRecoveryEligible(checked.record, checked.identity)) fail();
+      }
       return {
         confirmed: true,
         confirmationId: checked.record.confirmationId,
@@ -406,9 +439,11 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
       const source = context || {};
       const record = readRecord(source.confirmationId);
       const identity = principal();
+      const consumedRecovery =
+        record.status === 'CONSUMED' && consumedRecoveryEligible(record, identity);
       if (
-        ['PENDING', 'CLAIMED'].indexOf(record.status) === -1 ||
-        record.expiresAt < nowSeconds() ||
+        (['PENDING', 'CLAIMED'].indexOf(record.status) === -1 && !consumedRecovery) ||
+        (record.expiresAt < nowSeconds() && !consumedRecovery) ||
         record.intent !== source.intent ||
         record.sourceId !== binding.sourceId ||
         record.targetId !== binding.targetId ||
@@ -427,7 +462,8 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
           prior.confirmationId !== record.confirmationId ||
           prior.subjectId !== identity.subjectId ||
           prior.tenantId !== binding.tenantId ||
-          prior.status === 'CONSUMED'
+          !['CLAIMED', 'CONSUMED'].includes(prior.status) ||
+          (prior.status === 'CONSUMED' && !consumedRecovery)
         )
           fail();
       } else {

@@ -285,6 +285,25 @@ function prepareBootstrapCompletion(f) {
   );
 }
 
+function bootstrapAuthorizationDecision(f, moduleId = 'CLIENTES') {
+  f.context.bootstrapUserId = sheetRecords(f.sheets.get('CORE_USUARIOS'))[0].ID_Usuario;
+  f.context.bootstrapProbeModuleId = moduleId;
+  return f.run(`
+    (function () {
+      var bootstrapTrustedVerifier = function () {
+        return { ok: true, verified: true, principal: {
+          issuer: 'https://accounts.google.com', subjectId: 'principal-1', userId: bootstrapUserId
+        }};
+      };
+      return aerpAuthorizeFromMetadata({
+        authentication: { token: 'trusted' },
+        companyId: 'tenant-A', moduleId: bootstrapProbeModuleId, action: 'VIEW',
+        context: { companyId: 'tenant-A' }
+      }, { trustedPrincipalVerifier: bootstrapTrustedVerifier }).decision;
+    })()
+  `);
+}
+
 test('one-time OIDC bootstrap provisions explicit admin grants and waits for application', () => {
   const f = fixture();
   f.run(`
@@ -406,9 +425,10 @@ test('permission promotion failures stay incomplete and retry without duplicate 
     assert.equal(failed.state, 'INCOMPLETE');
     assert.equal(failed.code, 'ACCESS_PROMOTION_INCOMPLETE', failureMode);
     assert.equal(failed.persistence, 'UNKNOWN');
-    assert.match(f.properties.get('AERP041:v1:state'), /INCOMPLETE/);
-    assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CLAIMED/);
+    assert.match(f.properties.get('AERP041:v1:state'), /INCOMPLETE|COMPLETE/);
+    assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
     assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+    assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
 
     f.control.failSheetWrite = null;
     f.control.failFlush = false;
@@ -434,9 +454,16 @@ test('a failed COMPLETE state write cannot expose promoted permissions and is re
   assert.match(f.properties.get('AERP041:v1:state'), /INCOMPLETE/);
   assert.equal(f.run('secureInstaller.canAccess(request)'), false);
   assert.equal(
-    sheetRecords(f.sheets.get('CORE_PERMISOS')).every(row => row.Nivel_Acceso === 'ALLOW'),
+    sheetRecords(f.sheets.get('CORE_PERMISOS')).filter(row => row.Nivel_Acceso === 'ALLOW').length,
+    1
+  );
+  assert.equal(
+    sheetRecords(f.sheets.get('CORE_PERMISOS'))
+      .filter(row => row.ID_Modulo !== 'ADMINISTRACION')
+      .every(row => row.Nivel_Acceso === 'DENY'),
     true
   );
+  assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
 
   f.control.failCompleteState = false;
   const retried = f.run('secureInstaller.apply(request)');
@@ -456,6 +483,7 @@ test('bootstrap consumption failure remains fail-closed and renews the same inst
   assert.match(f.properties.get('AERP041:v1:state'), /INCOMPLETE/);
   assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CLAIMED/);
   assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
 
   f.control.failKey = null;
   f.run("request.confirmation = secureInstaller.renewConfirmation({ intent: 'APPLY' })");
@@ -463,6 +491,57 @@ test('bootstrap consumption failure remains fail-closed and renews the same inst
   assert.equal(retried.ok, true);
   assert.equal(retried.state, 'COMPLETE');
   assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+});
+
+test('a consumed bootstrap resumes the same promotion without exposing early access', () => {
+  const f = fixture();
+  prepareBootstrapCompletion(f);
+  f.properties.set(
+    'AERP041:v1:state',
+    JSON.stringify({
+      sourceId: 'source-1',
+      boundTargetId: 'target-1',
+      tenantId: 'tenant-A',
+      status: 'COMPLETE'
+    })
+  );
+  const claimKey = 'AERP041:v1:bootstrap:claim';
+  const claim = JSON.parse(f.properties.get(claimKey));
+  const confirmationKey = `AERP041:v1:bootstrap:confirmation:${claim.confirmationId}`;
+  const confirmation = JSON.parse(f.properties.get(confirmationKey));
+
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
+  f.properties.set(claimKey, JSON.stringify({ ...claim, status: 'CONSUMED' }));
+  f.properties.set(confirmationKey, JSON.stringify({ ...confirmation, status: 'CONSUMED' }));
+
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
+  f.setOidcPayload({ sub: 'different-principal' });
+  assert.equal(f.run('secureInstaller.apply(request)').ok, false);
+  assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
+  f.setOidcPayload({ sub: 'principal-1' });
+  const recovered = f.run('secureInstaller.apply(request)');
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.state, 'COMPLETE');
+  assert.equal(f.run('secureInstaller.canAccess(request)'), true);
+  assert.equal(bootstrapAuthorizationDecision(f), 'ALLOW');
+});
+
+test('a bootstrap-backed COMPLETE state rejects missing lifecycle metadata', () => {
+  const f = fixture();
+  prepareBootstrapCompletion(f);
+  const complete = f.run('secureInstaller.apply(request)');
+  assert.equal(complete.ok, true);
+  const claim = JSON.parse(f.properties.get('AERP041:v1:bootstrap:claim'));
+  f.properties.delete('AERP041:v1:bootstrap:provisioned');
+  f.properties.delete('AERP041:v1:bootstrap:claim');
+  f.properties.delete(`AERP041:v1:bootstrap:confirmation:${claim.confirmationId}`);
+
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  const verification = f.run('secureInstaller.verify(request)');
+  assert.equal(verification.ok, false);
+  assert.equal(verification.state, 'INCOMPLETE');
 });
 
 test('legacy COMPLETE state with claimed partial access is recovered explicitly', () => {

@@ -89,6 +89,11 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       fail();
     }
   }
+  function bootstrapRequired() {
+    return (
+      typeof config.claimBootstrap === 'function' || typeof config.consumeBootstrap === 'function'
+    );
+  }
   function state() {
     const raw = read('state');
     if (raw === null) return { ...binding, status: 'EMPTY' };
@@ -121,22 +126,16 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       provisionBootstrapIfReady();
     }
     if (status === 'COMPLETE' && activeMutation && bootstrapGrant) {
+      // Validate the exact bounded rows first, but keep their commercial grants
+      // restricted until the durable state and one-time bootstrap are final.
       synchronizeBootstrapAccess('COMPLETE', false);
-      synchronizeBootstrapAccess('COMPLETE');
-    }
-    if (status === 'COMPLETE' && activeMutation && !bootstrapGrant) {
       const lifecycle = bootstrapLifecycleStatus();
-      if (!['NOT_APPLICABLE', 'COMPLETE'].includes(lifecycle)) {
-        accessPromotionPending = true;
-        fail();
-      }
-    }
-    write('state', JSON.stringify({ ...binding, status }));
-    if (status === 'COMPLETE' && activeMutation && typeof config.consumeBootstrap === 'function') {
-      const lifecycle = bootstrapLifecycleStatus();
-      if (bootstrapGrant || lifecycle !== 'NOT_APPLICABLE') {
+      if (!['RECOVERABLE', 'PROMOTION_READY', 'COMPLETE'].includes(lifecycle)) fail();
+
+      write('state', JSON.stringify({ ...binding, status: 'COMPLETE' }));
+      if (lifecycle === 'RECOVERABLE') {
         if (
-          !bootstrapGrant ||
+          typeof config.consumeBootstrap !== 'function' ||
           config.consumeBootstrap({
             confirmationId: activeMutation.confirmationId,
             tenantId: binding.tenantId,
@@ -146,15 +145,40 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
           uncertain = true;
           fail();
         }
-        if (bootstrapLifecycleStatus() !== 'COMPLETE') {
-          uncertain = true;
-          fail();
-        }
-        accessPromotionPending = false;
+      }
+      if (lifecycle !== 'COMPLETE' && bootstrapLifecycleStatus() !== 'PROMOTION_READY') {
+        uncertain = true;
+        fail();
+      }
+      if (lifecycle !== 'COMPLETE') {
+        // Visibility is promoted before permissions, and CORE_PERMISOS is a
+        // single bounded range write. Authorization becomes ALLOW only after
+        // state COMPLETE and bootstrap consumption are already durable.
+        synchronizeBootstrapAccess('COMPLETE');
+      }
+      if (bootstrapLifecycleStatus() !== 'COMPLETE') {
+        uncertain = true;
+        fail();
+      }
+      accessPromotionPending = false;
+      return true;
+    }
+    if (status === 'COMPLETE' && activeMutation && !bootstrapGrant) {
+      const lifecycle = bootstrapLifecycleStatus();
+      const accepted = bootstrapRequired()
+        ? lifecycle === 'COMPLETE'
+        : ['NOT_APPLICABLE', 'COMPLETE'].includes(lifecycle);
+      if (!accepted) {
+        accessPromotionPending = true;
+        fail();
       }
     }
+    write('state', JSON.stringify({ ...binding, status }));
     const completedLifecycle = status === 'COMPLETE' ? bootstrapLifecycleStatus() : null;
-    if (status === 'COMPLETE' && !['NOT_APPLICABLE', 'COMPLETE'].includes(completedLifecycle)) {
+    const completedLifecycleAccepted = bootstrapRequired()
+      ? completedLifecycle === 'COMPLETE'
+      : ['NOT_APPLICABLE', 'COMPLETE'].includes(completedLifecycle);
+    if (status === 'COMPLETE' && !completedLifecycleAccepted) {
       accessPromotionPending = true;
       fail();
     }
@@ -583,8 +607,10 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
     )
       return 'INVALID';
     const access = bootstrapAccessStatus();
-    if (claim.status === 'CONSUMED' && confirmation.status === 'CONSUMED' && access === 'COMPLETE')
-      return 'COMPLETE';
+    if (claim.status === 'CONSUMED' && confirmation.status === 'CONSUMED') {
+      if (access === 'COMPLETE') return 'COMPLETE';
+      if (access === 'RECOVERABLE') return 'PROMOTION_READY';
+    }
     if (
       claim.status === 'CLAIMED' &&
       ['CLAIMED', 'CONSUMED'].includes(confirmation.status) &&
@@ -741,7 +767,11 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
     const incomplete = bootstrapRecords('INCOMPLETE');
     const complete = bootstrapRecords('COMPLETE');
     const expected = accessState === 'COMPLETE' ? complete : incomplete;
-    for (const name of ['CORE_ROL_MODULO', 'CORE_PERMISOS']) {
+    const accessTables =
+      accessState === 'INCOMPLETE'
+        ? ['CORE_PERMISOS', 'CORE_ROL_MODULO']
+        : ['CORE_ROL_MODULO', 'CORE_PERMISOS'];
+    for (const name of accessTables) {
       const sheet = book.getSheetByName(name);
       if (!sheet || read('owned:' + name) !== String(sheet.getSheetId())) fail();
       const headers = tableIndex[name].columns.map(function (column) {
@@ -779,6 +809,7 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       )
         fail();
       if (shouldWrite === false) continue;
+      if (same(existingRows, expectedRows)) continue;
       try {
         sheet.getRange(2, 1, expectedRows.length, headers.length).setValues(expectedRows);
         SpreadsheetApp.flush();
@@ -804,9 +835,12 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
     );
     const admin = adminAllowed();
     const lifecycle = bootstrapLifecycleStatus();
-    const bootstrapValidated =
-      lifecycle !== 'INVALID' &&
-      (snapshot.status !== 'COMPLETE' || ['NOT_APPLICABLE', 'COMPLETE'].includes(lifecycle));
+    const bootstrapValidated = bootstrapRequired()
+      ? snapshot.status === 'COMPLETE'
+        ? lifecycle === 'COMPLETE'
+        : ['RECOVERABLE', 'PROMOTION_READY', 'COMPLETE'].includes(lifecycle)
+      : lifecycle !== 'INVALID' &&
+        (snapshot.status !== 'COMPLETE' || ['NOT_APPLICABLE', 'COMPLETE'].includes(lifecycle));
     const application =
       typeof config.validateApplication === 'function'
         ? config.validateApplication(aerpInstallerDeepFreeze_(JSON.parse(JSON.stringify(snapshot))))
@@ -956,7 +990,7 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       }
       if (
         typeof config.claimBootstrap === 'function' &&
-        (current.status !== 'COMPLETE' || lifecycle === 'RECOVERABLE')
+        (current.status !== 'COMPLETE' || ['RECOVERABLE', 'PROMOTION_READY'].includes(lifecycle))
       ) {
         if (activeMutation) {
           if (!claimBootstrap()) fail();
