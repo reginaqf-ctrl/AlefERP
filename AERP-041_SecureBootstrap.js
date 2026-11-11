@@ -291,9 +291,14 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
       if (!claimRaw) fail();
       const claim = JSON.parse(claimRaw);
       const prior = readRecord(claim.confirmationId);
+      const consumedRecovery =
+        claim.version === 1 &&
+        claim.status === 'CONSUMED' &&
+        prior.status === 'CONSUMED' &&
+        consumedRecoveryEligible(prior, identity);
       if (
         claim.version !== 1 ||
-        claim.status !== 'CLAIMED' ||
+        (claim.status !== 'CLAIMED' && !consumedRecovery) ||
         claim.subjectId !== identity.subjectId ||
         claim.tenantId !== binding.tenantId ||
         !['CLAIMED', 'CONSUMED'].includes(prior.status) ||
@@ -379,7 +384,8 @@ function aerpCreateAppsScriptSecureBootstrap(configuration) {
       record.issuer === identity.issuer &&
       record.subjectId === identity.subjectId &&
       record.planDigest === planDigest() &&
-      record.configurationDigest === configurationDigest()
+      record.configurationDigest === configurationDigest() &&
+      record.expiresAt >= nowSeconds()
     );
   }
 

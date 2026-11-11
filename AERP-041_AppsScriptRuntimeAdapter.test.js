@@ -528,6 +528,25 @@ test('a consumed bootstrap resumes the same promotion without exposing early acc
   assert.equal(bootstrapAuthorizationDecision(f), 'ALLOW');
 });
 
+test('consumed promotion recovery expires without reopening commercial access', () => {
+  const f = fixture();
+  prepareBootstrapCompletion(f);
+  f.control.failSheetWrite = 'CORE_PERMISOS';
+  const failed = f.run('secureInstaller.apply(request)');
+  assert.equal(failed.ok, false);
+  assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
+
+  f.control.failSheetWrite = null;
+  f.run('clockMs = 3001000');
+  const claim = f.properties.get('AERP041:v1:bootstrap:claim');
+  assert.throws(() => f.run("secureInstaller.renewConfirmation({ intent: 'APPLY' })"));
+  assert.equal(f.properties.get('AERP041:v1:bootstrap:claim'), claim);
+  assert.equal(f.run('secureInstaller.canAccess(request)'), false);
+  assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
+});
+
 test('a bootstrap-backed COMPLETE state rejects missing lifecycle metadata', () => {
   const f = fixture();
   prepareBootstrapCompletion(f);
@@ -656,6 +675,54 @@ test('operational controller completes the real secure runtime from clean prefli
   assert.equal(status.state, 'COMPLETE');
   assert.equal(status.appSheetReady, true);
   assert.equal(status.verified, true);
+});
+
+test('operational controller recovers a consumed final promotion for the same OIDC subject', () => {
+  const f = fixture();
+  f.run(`
+    var clockMs = 2000000;
+    var operational = aerpCreateOperationalInstallerController({
+      readConfiguration() {
+        return {
+          sourceId: 'source-1', tenantId: 'tenant-A',
+          expectedAudience: 'apps-script-client-id', expectedAdminEmail: 'admin@example.test',
+          company: {
+            code: 'TENANT_A', name: 'Empresa inicial', currency: 'USD', timeZone: 'Europe/Madrid'
+          }
+        };
+      },
+      getTargetId: () => 'target-1',
+      createSecureInstaller(configuration) {
+        return aerpCreateSecureAppsScriptInstaller(Object.assign({}, configuration, {
+          now: () => clockMs
+        }));
+      },
+      readAppSheetAttestation: () => appSheetCoreAttestation,
+      confirmPlan: () => true,
+      confirmCompletion: () => true
+    });
+  `);
+  assert.equal(f.run('operational.start().state'), 'INCOMPLETE');
+  f.control.failSheetWrite = 'CORE_PERMISOS';
+  const failed = f.run('operational.complete()');
+  assert.equal(failed.ok, false);
+  assert.equal(failed.state, 'INCOMPLETE');
+  assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+  assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
+
+  f.control.failSheetWrite = null;
+  f.setOidcPayload({ sub: 'different-principal' });
+  const denied = f.run('operational.complete()');
+  assert.equal(denied.ok, false);
+  assert.equal(bootstrapAuthorizationDecision(f), 'DENY');
+
+  f.setOidcPayload({ sub: 'principal-1' });
+  const recovered = f.run('operational.complete()');
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.state, 'COMPLETE');
+  assert.match(f.properties.get('AERP041:v1:bootstrap:claim'), /CONSUMED/);
+  assert.equal(bootstrapAuthorizationDecision(f), 'ALLOW');
+  assert.equal(f.run('operational.status().verified'), true);
 });
 
 test('operational preflight rejects wrong identity and cross-tenant requests without mutation', () => {

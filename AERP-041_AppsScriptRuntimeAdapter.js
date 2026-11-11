@@ -370,7 +370,7 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
     if (
       !claim ||
       claim.version !== 1 ||
-      claim.status !== 'CLAIMED' ||
+      !['CLAIMED', 'CONSUMED'].includes(claim.status) ||
       claim.tenantId !== binding.tenantId ||
       claim.subjectId !== principal.subjectId ||
       !opaque(claim.confirmationId)
@@ -379,10 +379,9 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
     const confirmationRaw = read('bootstrap:confirmation:' + claim.confirmationId);
     if (!confirmationRaw) return false;
     const confirmation = JSON.parse(confirmationRaw);
-    return Boolean(
+    const exactBinding = Boolean(
       confirmation &&
       confirmation.version === 1 &&
-      confirmation.status === 'CLAIMED' &&
       confirmation.intent === 'APPLY' &&
       confirmation.sourceId === binding.sourceId &&
       confirmation.targetId === binding.boundTargetId &&
@@ -390,6 +389,9 @@ function aerpCreateAppsScriptInstallerRuntime(configuration) {
       confirmation.issuer === principal.issuer &&
       confirmation.subjectId === principal.subjectId
     );
+    if (!exactBinding) return false;
+    if (claim.status === 'CLAIMED') return confirmation.status === 'CLAIMED';
+    return confirmation.status === 'CONSUMED' && bootstrapLifecycleStatus() === 'PROMOTION_READY';
   }
 
   function bootstrapRecords(accessState) {
