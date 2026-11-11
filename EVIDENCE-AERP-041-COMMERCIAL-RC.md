@@ -8,7 +8,8 @@
 - Integrated feature: `b06163c98d89f8afe94747bf3112905a955a29d1`.
 - Merge commit: `98f14c40d75278b6488f3752b4ccd866a102b865`.
 - Security-fix base: `c8c6590f78354be2df88d4c82f42821219e078db`.
-- Reviewed candidate: `02bcaf153331660b63fed086eaf66fca1bb054bd`.
+- Independent-review candidate: `c54b79f1550505d49ea3cc37693702c6e6166733`.
+- Reviewed candidate: `ea7582caecf5369e568fd931a1b2999b3568c978`.
 - Product scope: Alef ERP 1.0 only.
 
 The integration branch was published only as a backup and review candidate. No pull
@@ -25,6 +26,7 @@ Sheets write or AppSheet modification was performed.
 | `39194af` | Make Globals Gate process-readiness tests deterministic.                  |
 | `c8c6590` | Make administrative access promotion fail-closed and recoverable.         |
 | `02bcaf1` | Close bootstrap authorization windows before commercial permission grant. |
+| `ea7582c` | Recover a consumed final promotion through the operational controller.    |
 
 ## Recoverable access-promotion contract
 
@@ -55,6 +57,10 @@ the same OIDC issuer and subject, tenant, target, plan and configuration. A lega
 state that was written as `COMPLETE` before promotion finished is treated as `PARTIAL`,
 not as commercial success. When bootstrap services are configured, missing lifecycle
 metadata is invalid and `NOT_APPLICABLE` cannot satisfy a completed installation.
+If the last bounded access write fails after consumption, the operational controller
+can issue a new short-lived confirmation only while the consumed evidence remains
+unexpired and only for the same OIDC issuer and subject, tenant, target, plan and
+configuration. Expired recovery evidence remains `DENY` and cannot reopen access.
 
 The operational controller independently requires current AppSheet readiness and a
 successful installer verification before returning `OPERATIONAL_INSTALLATION_COMPLETE`.
@@ -74,6 +80,8 @@ The Apps Script runtime tests cover failures at these boundaries:
 - bootstrap consumption, including renewal after a split claim/confirmation state;
 - retry after a mixed restricted/promoted row set;
 - rejection of recovery by a different OIDC subject;
+- controller-level recovery after a consumed final-promotion failure;
+- expiration of consumed recovery without reopening commercial access;
 - rejection of a completed installation whose lifecycle evidence was deleted;
 - duplicate access row;
 - altered access row;
@@ -102,8 +110,8 @@ Canonical runtime: Node `24.18.0`, npm `11.16.0`.
 
 | Check                           | Result                                                |
 | ------------------------------- | ----------------------------------------------------- |
-| Product test gate               | **367/367 PASS**, 10 declared suites                  |
-| Apps Script runtime tests       | **42/42 PASS**                                        |
+| Product test gate               | **369/369 PASS**, 10 declared suites                  |
+| Apps Script runtime tests       | **44/44 PASS**                                        |
 | Operational controller tests    | **16/16 PASS**                                        |
 | ESLint                          | PASS, zero warnings                                   |
 | Prettier                        | PASS                                                  |
@@ -115,9 +123,8 @@ Canonical runtime: Node `24.18.0`, npm `11.16.0`.
 | Husky/lint-staged during commit | PASS; no bypass was used                              |
 | `npm audit`                     | 0 critical, 0 high, 4 moderate tooling findings       |
 
-The canonical test evidence was regenerated against the code committed as `02bcaf1`.
-At execution time, the only separate staged change was this evidence document; no
-product-code change remained outside that commit.
+The canonical test evidence was regenerated against `ea7582c` and records
+`workingTree: clean`, `result: passed`, `exitCode: 0` and 369 passing tests.
 
 The self-test gate reports **41/42** inside the restricted Windows host. Its sole
 failure is the inherited real `taskkill.exe` process-tree confirmation test; all
@@ -131,21 +138,30 @@ for the four remaining moderate `eslint`/`minimatch` tooling findings. That down
 was not applied because it is outside this functional correction and requires a
 separate compatibility decision.
 
+## Independent review disposition
+
+Qwen reviewed `c54b79f` and returned `APPROVED` for the frozen 17-table blueprint,
+manifest integrity and AppSheet Core readiness contract. Claude returned
+`APPROVED WITH FOLLOW-UP`: no security blocker, but the normal operational commands
+could not recover after a failure between bootstrap consumption and final permission
+promotion. Commit `ea7582c` closes that availability gap and adds controller-level,
+cross-principal and expiration coverage without changing AERP-036/AERP-037, the
+AERP-040 blueprint, OAuth scopes or AppSheet configuration.
+
 ## Remaining delivery actions
 
 This candidate is ready for independent code review, not yet for an assertion that a
 commercial installation has completed. The remaining authorized sequence is:
 
-1. obtain independent Claude and Qwen review of commit `02bcaf1`;
-2. resolve any genuine merge blockers;
-3. request separate authorization for PR and merge into the release branch;
-4. request separate authorization for deployment to the approved isolated Apps
+1. obtain focused independent confirmation of commit `ea7582c`;
+2. request separate authorization for PR and merge into the release branch;
+3. request separate authorization for deployment to the approved isolated Apps
    Script project;
-5. configure the approved Script Properties in that isolated project;
-6. execute the complete installation against the approved isolated Google Sheet;
-7. configure and validate the AppSheet Core application for all 17 tables;
-8. retain the real installation, failure-recovery and AppSheet evidence;
-9. confirm the durable state reaches `COMPLETE` before presenting the pilot.
+4. configure the approved Script Properties in that isolated project;
+5. execute the complete installation against the approved isolated Google Sheet;
+6. configure and validate the AppSheet Core application for all 17 tables;
+7. retain the real installation, failure-recovery and AppSheet evidence;
+8. confirm the durable state reaches `COMPLETE` before presenting the pilot.
 
 Until steps 4–9 are performed, the result is a fully tested release candidate for an
 assisted pilot, not a completed real-world installation.
