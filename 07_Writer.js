@@ -139,10 +139,7 @@ function aerpBuildExistingColumnIndex(rows, headers) {
   const idxCampo = headers.indexOf('Nombre_Campo');
 
   rows.forEach(row => {
-    const key =
-      String(row[idxTabla] || '').trim() +
-      '|' +
-      String(row[idxCampo] || '').trim();
+    const key = String(row[idxTabla] || '').trim() + '|' + String(row[idxCampo] || '').trim();
 
     if (key !== '|') index[key] = true;
   });
@@ -156,10 +153,7 @@ function aerpBuildExistingRowIndex(rows, headers) {
   const idxCampo = headers.indexOf('Nombre_Campo');
 
   rows.forEach((row, i) => {
-    const key =
-      String(row[idxTabla] || '').trim() +
-      '|' +
-      String(row[idxCampo] || '').trim();
+    const key = String(row[idxTabla] || '').trim() + '|' + String(row[idxCampo] || '').trim();
 
     if (key !== '|') index[key] = i + 2;
   });
@@ -170,8 +164,6 @@ function aerpBuildExistingRowIndex(rows, headers) {
 function aerpMetadataToRow(metadata, headers) {
   return headers.map(header => {
     const key = String(header).trim();
-    return Object.prototype.hasOwnProperty.call(metadata, key)
-      ? metadata[key]
-      : '';
+    return Object.prototype.hasOwnProperty.call(metadata, key) ? metadata[key] : '';
   });
 }

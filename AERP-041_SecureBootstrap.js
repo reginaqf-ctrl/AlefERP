@@ -1,0 +1,605 @@
+/**
+ * AERP-041 secure first-install services for a bound Apps Script project.
+ *
+ * The OIDC token is obtained directly from the trusted Apps Script runtime.
+ * Confirmation and the one-time bootstrap claim are durable, document-scoped
+ * and bound to the installation plan. None of these services grant normal ERP
+ * access; AERP-036/AERP-037 remain authoritative after provisioning.
+ */
+function aerpCreateAppsScriptSecureBootstrap(configuration) {
+  const config = configuration || {};
+  const binding = {
+    sourceId: config.sourceId,
+    targetId: config.targetId,
+    tenantId: config.tenantId
+  };
+  const company = config.company || {};
+  const expectedAudience = config.expectedAudience;
+  const expectedAdminEmail = config.expectedAdminEmail;
+  const confirmationTtlSeconds = Number(config.confirmationTtlSeconds || 600);
+  const prefix = 'AERP041:v1:bootstrap:';
+  const issuers = ['accounts.google.com', 'https://accounts.google.com'];
+
+  function opaque(value) {
+    return typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
+  }
+
+  function text(value, maximum) {
+    return typeof value === 'string' && value.trim() && value.trim().length <= maximum
+      ? value.trim()
+      : null;
+  }
+
+  function hasControlCharacter(value) {
+    return value.split('').some(function (character) {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    });
+  }
+
+  function sheetSafeText(value, maximum) {
+    const normalized = text(value, maximum);
+    return normalized && !/^[\s]*[=+\-@]/.test(normalized) && !hasControlCharacter(normalized)
+      ? normalized
+      : null;
+  }
+
+  function normalizedEmail(value) {
+    const normalized = sheetSafeText(value, 320);
+    return normalized && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
+      ? normalized.toLowerCase()
+      : null;
+  }
+
+  function fail() {
+    throw new Error('SECURE_BOOTSTRAP_REJECTED');
+  }
+
+  function canonical(value) {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') {
+      const result = {};
+      Object.keys(value)
+        .sort()
+        .forEach(function (key) {
+          result[key] = canonical(value[key]);
+        });
+      return result;
+    }
+    return value;
+  }
+
+  function digest(value) {
+    return Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      typeof value === 'string' ? value : JSON.stringify(canonical(value)),
+      Utilities.Charset.UTF_8
+    )
+      .map(function (byte) {
+        return ('0' + ((byte + 256) % 256).toString(16)).slice(-2);
+      })
+      .join('');
+  }
+
+  function nowSeconds() {
+    return Math.floor((typeof config.now === 'function' ? config.now() : Date.now()) / 1000);
+  }
+
+  function spreadsheet() {
+    if (
+      !opaque(binding.sourceId) ||
+      !opaque(binding.targetId) ||
+      !opaque(binding.tenantId) ||
+      binding.sourceId === binding.targetId ||
+      !normalizedEmail(expectedAdminEmail) ||
+      !Number.isInteger(confirmationTtlSeconds) ||
+      confirmationTtlSeconds < 60 ||
+      confirmationTtlSeconds > 900
+    )
+      fail();
+    const book = SpreadsheetApp.getActiveSpreadsheet();
+    if (!book || book.getId() !== binding.targetId) fail();
+    return book;
+  }
+
+  function properties() {
+    spreadsheet();
+    const store = PropertiesService.getDocumentProperties();
+    if (!store) fail();
+    return store;
+  }
+
+  function decodeOidcPayload(token) {
+    const parts = typeof token === 'string' ? token.split('.') : [];
+    if (parts.length !== 3 || !parts[1]) fail();
+    const bytes = Utilities.base64DecodeWebSafe(parts[1]);
+    const raw = Utilities.newBlob(bytes).getDataAsString();
+    const payload = JSON.parse(raw);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) fail();
+    return payload;
+  }
+
+  function audienceMatches(audience) {
+    if (!text(expectedAudience, 512)) return false;
+    return Array.isArray(audience)
+      ? audience.indexOf(expectedAudience) !== -1
+      : audience === expectedAudience;
+  }
+
+  function verifyPrincipal(input) {
+    try {
+      if (!input || input.requestedCompanyId !== binding.tenantId) fail();
+      const token = ScriptApp.getIdentityToken();
+      if (!token) fail();
+      const payload = decodeOidcPayload(token);
+      const current = nowSeconds();
+      const issuer = text(payload.iss, 128);
+      const subjectId = text(payload.sub, 128);
+      const email = normalizedEmail(payload.email);
+      const suppliedName =
+        payload.name === undefined || payload.name === null ? null : payload.name;
+      const name = suppliedName === null ? email : sheetSafeText(suppliedName, 160);
+      if (
+        issuers.indexOf(issuer) === -1 ||
+        !opaque(subjectId) ||
+        !audienceMatches(payload.aud) ||
+        !Number.isFinite(payload.exp) ||
+        payload.exp <= current ||
+        (Number.isFinite(payload.iat) && payload.iat > current + 60) ||
+        !email ||
+        !name ||
+        email.toLowerCase() !== normalizedEmail(expectedAdminEmail) ||
+        payload.email_verified !== true
+      )
+        fail();
+      return {
+        ok: true,
+        verified: true,
+        principal: {
+          issuer: issuer,
+          subjectId: subjectId,
+          userId: 'OIDC_' + digest(issuer + '\u0000' + subjectId).slice(0, 32),
+          authenticationMethod: 'GOOGLE_OIDC',
+          email: email,
+          name: name
+        }
+      };
+    } catch (_error) {
+      return { ok: false, verified: false, principal: null };
+    }
+  }
+
+  function planDigest() {
+    return digest(JSON.stringify(aerpBuildCommercialInstallerPlan()));
+  }
+
+  function companyConfiguration() {
+    const normalized = {
+      code: sheetSafeText(company.code, 64),
+      name: sheetSafeText(company.name, 160),
+      currency: sheetSafeText(company.currency, 16),
+      timeZone: sheetSafeText(company.timeZone, 64)
+    };
+    if (
+      Object.values(normalized).some(function (value) {
+        return !value;
+      })
+    )
+      fail();
+    return normalized;
+  }
+
+  function configurationDigest() {
+    return digest({
+      binding: binding,
+      company: companyConfiguration(),
+      expectedAdminEmail: normalizedEmail(expectedAdminEmail),
+      planDigest: planDigest()
+    });
+  }
+
+  function readRecord(id) {
+    if (!opaque(id)) fail();
+    const raw = properties().getProperty(prefix + 'confirmation:' + id);
+    if (raw === null) fail();
+    const record = JSON.parse(raw);
+    if (!record || record.version !== 1) fail();
+    return record;
+  }
+
+  function writeRecord(record) {
+    properties().setProperty(
+      prefix + 'confirmation:' + record.confirmationId,
+      JSON.stringify(record)
+    );
+    const confirmed = readRecord(record.confirmationId);
+    if (JSON.stringify(confirmed) !== JSON.stringify(record)) fail();
+  }
+
+  function principal() {
+    const result = verifyPrincipal({ requestedCompanyId: binding.tenantId });
+    if (!result.ok) fail();
+    return result.principal;
+  }
+
+  function issueConfirmation(input) {
+    const source = input || {};
+    const intent = source.intent === 'RECOVER' ? 'RECOVER' : 'APPLY';
+    spreadsheet();
+    const lock = LockService.getDocumentLock();
+    if (!lock || lock.tryLock(1000) !== true) fail();
+    try {
+      const currentState = properties().getProperty('AERP041:v1:state');
+      if (currentState) {
+        const parsed = JSON.parse(currentState);
+        if (parsed.status === 'COMPLETE') fail();
+      }
+      const identity = principal();
+      const confirmationId = String(Utilities.getUuid()).replace(/-/g, '_');
+      const nonce = String(Utilities.getUuid()) + String(Utilities.getUuid());
+      const record = {
+        version: 1,
+        confirmationId: confirmationId,
+        status: 'PENDING',
+        intent: intent,
+        sourceId: binding.sourceId,
+        targetId: binding.targetId,
+        tenantId: binding.tenantId,
+        issuer: identity.issuer,
+        subjectId: identity.subjectId,
+        planDigest: planDigest(),
+        configurationDigest: configurationDigest(),
+        nonceDigest: digest(nonce),
+        expiresAt: nowSeconds() + confirmationTtlSeconds
+      };
+      writeRecord(record);
+      return Object.freeze({ confirmationId: confirmationId, nonce: nonce });
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
+  /**
+   * Renews only the confirmation evidence attached to an already-claimed,
+   * incomplete bootstrap. This does not create a new grant: the same OIDC
+   * subject, tenant, target, commercial plan and configuration must still be
+   * active. It exists solely so a manual AppSheet Core review can outlive the
+   * short confirmation TTL without persisting a raw nonce outside this call.
+   */
+  function renewConfirmation(input) {
+    const source = input || {};
+    if (source.intent !== 'APPLY') fail();
+    spreadsheet();
+    const lock = LockService.getDocumentLock();
+    if (!lock || lock.tryLock(1000) !== true) fail();
+    try {
+      const store = properties();
+      const stateRaw = store.getProperty('AERP041:v1:state');
+      const currentState = stateRaw ? JSON.parse(stateRaw) : null;
+      if (
+        !currentState ||
+        !['INCOMPLETE', 'COMPLETE'].includes(currentState.status) ||
+        currentState.sourceId !== binding.sourceId ||
+        currentState.boundTargetId !== binding.targetId ||
+        currentState.tenantId !== binding.tenantId
+      )
+        fail();
+
+      const identity = principal();
+      const claimKey = prefix + 'claim';
+      const claimRaw = store.getProperty(claimKey);
+      if (!claimRaw) fail();
+      const claim = JSON.parse(claimRaw);
+      const prior = readRecord(claim.confirmationId);
+      const consumedRecovery =
+        claim.version === 1 &&
+        claim.status === 'CONSUMED' &&
+        prior.status === 'CONSUMED' &&
+        consumedRecoveryEligible(prior, identity);
+      if (
+        claim.version !== 1 ||
+        (claim.status !== 'CLAIMED' && !consumedRecovery) ||
+        claim.subjectId !== identity.subjectId ||
+        claim.tenantId !== binding.tenantId ||
+        !['CLAIMED', 'CONSUMED'].includes(prior.status) ||
+        prior.intent !== 'APPLY' ||
+        prior.sourceId !== binding.sourceId ||
+        prior.targetId !== binding.targetId ||
+        prior.tenantId !== binding.tenantId ||
+        prior.issuer !== identity.issuer ||
+        prior.subjectId !== identity.subjectId ||
+        prior.planDigest !== planDigest() ||
+        prior.configurationDigest !== configurationDigest()
+      )
+        fail();
+
+      const confirmationId = String(Utilities.getUuid()).replace(/-/g, '_');
+      const nonce = String(Utilities.getUuid()) + String(Utilities.getUuid());
+      const record = {
+        version: 1,
+        confirmationId: confirmationId,
+        status: 'CLAIMED',
+        intent: 'APPLY',
+        sourceId: binding.sourceId,
+        targetId: binding.targetId,
+        tenantId: binding.tenantId,
+        issuer: identity.issuer,
+        subjectId: identity.subjectId,
+        planDigest: prior.planDigest,
+        configurationDigest: prior.configurationDigest,
+        nonceDigest: digest(nonce),
+        expiresAt: nowSeconds() + confirmationTtlSeconds
+      };
+      try {
+        writeRecord(record);
+      } catch (_error) {
+        const recovered = readRecord(confirmationId);
+        if (JSON.stringify(recovered) !== JSON.stringify(record)) fail();
+      }
+
+      const renewedClaim = {
+        version: 1,
+        status: 'CLAIMED',
+        confirmationId: confirmationId,
+        subjectId: identity.subjectId,
+        tenantId: binding.tenantId
+      };
+      try {
+        store.setProperty(claimKey, JSON.stringify(renewedClaim));
+      } catch (_error) {
+        const recoveredClaim = JSON.parse(store.getProperty(claimKey) || 'null');
+        if (JSON.stringify(recoveredClaim) !== JSON.stringify(renewedClaim)) fail();
+      }
+      const storedClaim = JSON.parse(store.getProperty(claimKey) || 'null');
+      if (
+        JSON.stringify(storedClaim) !== JSON.stringify(renewedClaim) ||
+        JSON.stringify(readRecord(confirmationId)) !== JSON.stringify(record)
+      )
+        fail();
+      return Object.freeze({ confirmationId: confirmationId, nonce: nonce });
+    } finally {
+      lock.releaseLock();
+    }
+  }
+  function consumedRecoveryEligible(record, identity) {
+    const store = properties();
+    const state = JSON.parse(store.getProperty('AERP041:v1:state') || 'null');
+    const claim = JSON.parse(store.getProperty(prefix + 'claim') || 'null');
+    return Boolean(
+      state &&
+      ['INCOMPLETE', 'COMPLETE'].includes(state.status) &&
+      state.sourceId === binding.sourceId &&
+      state.boundTargetId === binding.targetId &&
+      state.tenantId === binding.tenantId &&
+      claim &&
+      claim.version === 1 &&
+      claim.status === 'CONSUMED' &&
+      claim.confirmationId === record.confirmationId &&
+      claim.subjectId === identity.subjectId &&
+      claim.tenantId === binding.tenantId &&
+      record.status === 'CONSUMED' &&
+      record.sourceId === binding.sourceId &&
+      record.targetId === binding.targetId &&
+      record.tenantId === binding.tenantId &&
+      record.issuer === identity.issuer &&
+      record.subjectId === identity.subjectId &&
+      record.planDigest === planDigest() &&
+      record.configurationDigest === configurationDigest() &&
+      record.expiresAt >= nowSeconds()
+    );
+  }
+
+  function matchingRecord(input, allowedStatuses, allowExpired) {
+    const source = input || {};
+    const evidence = source.evidence || source;
+    const record = readRecord(evidence.confirmationId);
+    const identity = principal();
+    if (
+      allowedStatuses.indexOf(record.status) === -1 ||
+      (record.expiresAt < nowSeconds() && allowExpired !== true) ||
+      record.intent !== source.intent ||
+      record.sourceId !== binding.sourceId ||
+      record.targetId !== binding.targetId ||
+      record.tenantId !== binding.tenantId ||
+      record.issuer !== identity.issuer ||
+      record.subjectId !== identity.subjectId ||
+      record.planDigest !== source.planDigest ||
+      record.planDigest !== planDigest() ||
+      record.configurationDigest !== configurationDigest() ||
+      record.nonceDigest !== digest(evidence.nonce || '')
+    )
+      fail();
+    return { record: record, identity: identity };
+  }
+
+  function verifyConfirmation(input) {
+    try {
+      let checked;
+      try {
+        checked = matchingRecord(input, ['PENDING', 'CLAIMED']);
+      } catch (_error) {
+        checked = matchingRecord(input, ['CONSUMED'], true);
+        if (!consumedRecoveryEligible(checked.record, checked.identity)) fail();
+      }
+      return {
+        confirmed: true,
+        confirmationId: checked.record.confirmationId,
+        intent: input.intent,
+        sourceId: binding.sourceId,
+        targetId: binding.targetId,
+        tenantId: binding.tenantId,
+        subjectId: checked.identity.subjectId,
+        contractVersion: input.contractVersion,
+        blueprintVersion: input.blueprintVersion,
+        presentationVersion: input.presentationVersion,
+        planDigest: checked.record.planDigest
+      };
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function claimBootstrap(context) {
+    let mutationAttempted = false;
+    try {
+      const source = context || {};
+      const record = readRecord(source.confirmationId);
+      const identity = principal();
+      const consumedRecovery =
+        record.status === 'CONSUMED' && consumedRecoveryEligible(record, identity);
+      if (
+        (['PENDING', 'CLAIMED'].indexOf(record.status) === -1 && !consumedRecovery) ||
+        (record.expiresAt < nowSeconds() && !consumedRecovery) ||
+        record.intent !== source.intent ||
+        record.sourceId !== binding.sourceId ||
+        record.targetId !== binding.targetId ||
+        record.tenantId !== binding.tenantId ||
+        record.issuer !== identity.issuer ||
+        record.subjectId !== identity.subjectId ||
+        record.configurationDigest !== configurationDigest()
+      )
+        fail();
+      const store = properties();
+      const claimKey = prefix + 'claim';
+      const priorRaw = store.getProperty(claimKey);
+      if (priorRaw) {
+        const prior = JSON.parse(priorRaw);
+        if (
+          prior.confirmationId !== record.confirmationId ||
+          prior.subjectId !== identity.subjectId ||
+          prior.tenantId !== binding.tenantId ||
+          !['CLAIMED', 'CONSUMED'].includes(prior.status) ||
+          (prior.status === 'CONSUMED' && !consumedRecovery)
+        )
+          fail();
+      } else {
+        const claim = {
+          version: 1,
+          status: 'CLAIMED',
+          confirmationId: record.confirmationId,
+          subjectId: identity.subjectId,
+          tenantId: binding.tenantId
+        };
+        mutationAttempted = true;
+        store.setProperty(claimKey, JSON.stringify(claim));
+        const storedClaim = JSON.parse(store.getProperty(claimKey) || 'null');
+        if (JSON.stringify(storedClaim) !== JSON.stringify(claim)) fail();
+      }
+      if (record.status === 'PENDING') {
+        record.status = 'CLAIMED';
+        mutationAttempted = true;
+        writeRecord(record);
+      }
+      return {
+        ok: true,
+        confirmationId: record.confirmationId,
+        profile: identity,
+        company: companyConfiguration()
+      };
+    } catch (_error) {
+      return { ok: false, persistence: mutationAttempted ? 'UNKNOWN' : 'UNCHANGED' };
+    }
+  }
+
+  function consumeBootstrap(context) {
+    try {
+      const source = context || {};
+      const store = properties();
+      const claimKey = prefix + 'claim';
+      const raw = store.getProperty(claimKey);
+      if (!raw) fail();
+      const claim = JSON.parse(raw);
+      if (
+        claim.version !== 1 ||
+        claim.status !== 'CLAIMED' ||
+        claim.confirmationId !== source.confirmationId ||
+        claim.tenantId !== binding.tenantId ||
+        source.tenantId !== binding.tenantId ||
+        source.targetId !== binding.targetId
+      )
+        fail();
+      const record = readRecord(claim.confirmationId);
+      if (
+        !['CLAIMED', 'CONSUMED'].includes(record.status) ||
+        record.confirmationId !== claim.confirmationId ||
+        record.sourceId !== binding.sourceId ||
+        record.targetId !== binding.targetId ||
+        record.tenantId !== binding.tenantId ||
+        record.subjectId !== claim.subjectId ||
+        record.planDigest !== planDigest() ||
+        record.configurationDigest !== configurationDigest()
+      )
+        fail();
+      const consumedRecord = Object.assign({}, record, { status: 'CONSUMED' });
+      const consumedClaim = Object.assign({}, claim, { status: 'CONSUMED' });
+      try {
+        writeRecord(consumedRecord);
+      } catch (_error) {
+        if (JSON.stringify(readRecord(claim.confirmationId)) !== JSON.stringify(consumedRecord)) {
+          fail();
+        }
+      }
+      try {
+        store.setProperty(claimKey, JSON.stringify(consumedClaim));
+      } catch (_error) {
+        if (store.getProperty(claimKey) !== JSON.stringify(consumedClaim)) fail();
+      }
+      return Boolean(
+        JSON.stringify(readRecord(claim.confirmationId)) === JSON.stringify(consumedRecord) &&
+        store.getProperty(claimKey) === JSON.stringify(consumedClaim)
+      );
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  return Object.freeze({
+    trustedPrincipalVerifier: verifyPrincipal,
+    issueConfirmation: issueConfirmation,
+    renewConfirmation: renewConfirmation,
+    verifyConfirmation: verifyConfirmation,
+    claimBootstrap: claimBootstrap,
+    consumeBootstrap: consumeBootstrap
+  });
+}
+
+/**
+ * Composes the approved Apps Script bootstrap with the durable installer.
+ * Security services are always sourced from the bootstrap created here and
+ * cannot be replaced by caller-provided verifier functions.
+ */
+function aerpCreateSecureAppsScriptInstaller(configuration) {
+  const config = configuration || {};
+  const bootstrap = aerpCreateAppsScriptSecureBootstrap(config);
+  const appSheetCore = aerpCreateAppSheetCoreReadinessValidator(
+    Object.assign({}, config, {
+      trustedPrincipalVerifier: bootstrap.trustedPrincipalVerifier
+    })
+  );
+  const runtimeConfiguration = Object.assign({}, config, {
+    trustedPrincipalVerifier: bootstrap.trustedPrincipalVerifier,
+    verifyConfirmation: bootstrap.verifyConfirmation,
+    claimBootstrap: bootstrap.claimBootstrap,
+    consumeBootstrap: bootstrap.consumeBootstrap,
+    validateApplication: appSheetCore.validateApplication
+  });
+  const runtime = aerpCreateAppsScriptInstallerRuntime(runtimeConfiguration);
+
+  return Object.freeze({
+    issueConfirmation: bootstrap.issueConfirmation,
+    renewConfirmation: bootstrap.renewConfirmation,
+    recordAppSheetCoreAttestation: appSheetCore.recordAttestation,
+    getAppSheetCoreReadiness: appSheetCore.getReadiness,
+    analyze: runtime.analyze,
+    plan: runtime.plan,
+    verify: runtime.verify,
+    apply: runtime.apply,
+    rollback: runtime.rollback,
+    canAccess: runtime.canAccess
+  });
+}
+
+if (typeof globalThis !== 'undefined') {
+  globalThis.aerpCreateAppsScriptSecureBootstrap = aerpCreateAppsScriptSecureBootstrap;
+  globalThis.aerpCreateSecureAppsScriptInstaller = aerpCreateSecureAppsScriptInstaller;
+}

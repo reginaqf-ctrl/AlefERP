@@ -5,9 +5,7 @@
       "name": "AlefERP",
       "type": "node",
       "request": "launch",
-      "skipFiles": [
-        "<node_internals>/**"
-      ],
+      "skipFiles": ["<node_internals>/**"],
       "program": "${workspaceFolder}/10_Main.js"
     }
   ]

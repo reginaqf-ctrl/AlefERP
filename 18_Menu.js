@@ -18,6 +18,10 @@ function onOpen() {
     .addItem('Dry Run', 'menuDryRun')
     .addItem('Verificar instalación', 'menuInstallerCheck')
     .addSeparator()
+    .addItem('Instalación segura', 'menuAerp041SecureInstall')
+    .addItem('Completar AppSheet Core', 'menuAerp041CompleteAppSheetCore')
+    .addItem('Estado instalación segura', 'menuAerp041SecureStatus')
+    .addSeparator()
     .addItem('Probar interfaz', 'demoUIFoundation')
     .addToUi();
 }
@@ -30,14 +34,11 @@ function menuGenerarERP() {
 
     if (!result || !result.ok) {
       throw new Error(
-        result && result.message
-          ? result.message
-          : 'El proceso no devolvió un resultado válido.'
+        result && result.message ? result.message : 'El proceso no devolvió un resultado válido.'
       );
     }
 
     aerpBuildSuccessDialog(result.summary);
-
   } catch (error) {
     aerpBuildErrorDialog(error);
   }
@@ -48,11 +49,7 @@ function menuGenerarERP() {
  */
 function menuDryRun() {
   try {
-    aerpToast(
-      'Analizando tablas y metadata sin realizar cambios.',
-      'Dry Run',
-      4
-    );
+    aerpToast('Analizando tablas y metadata sin realizar cambios.', 'Dry Run', 4);
 
     const result = runAlefERPDryRun();
 
@@ -69,12 +66,8 @@ function menuDryRun() {
     ].join('\n');
 
     aerpSuccess(message, 'Dry Run finalizado');
-
   } catch (error) {
-    aerpError(
-      error && error.message ? error.message : error,
-      'Dry Run interrumpido'
-    );
+    aerpError(error && error.message ? error.message : error, 'Dry Run interrumpido');
   }
 }
 
@@ -86,27 +79,15 @@ function menuInstallerCheck() {
     const result = aerpInstallCheck();
 
     if (result.ok) {
-      aerpSuccess(
-        AERP_MESSAGES.INSTALL_SUCCESS,
-        'Instalación verificada'
-      );
+      aerpSuccess(AERP_MESSAGES.INSTALL_SUCCESS, 'Instalación verificada');
       return;
     }
 
     const errors = result.errors || [];
 
-    aerpWarning(
-      AERP_MESSAGES.INSTALL_ERROR +
-      '\n\n' +
-      errors.join('\n'),
-      'Revisión necesaria'
-    );
-
+    aerpWarning(AERP_MESSAGES.INSTALL_ERROR + '\n\n' + errors.join('\n'), 'Revisión necesaria');
   } catch (error) {
-    aerpError(
-      error && error.message ? error.message : error,
-      'Error de instalación'
-    );
+    aerpError(error && error.message ? error.message : error, 'Error de instalación');
   }
 }
 
@@ -115,11 +96,7 @@ function menuInstallerCheck() {
  */
 function menuSincronizarMetadata() {
   try {
-    aerpToast(
-      'Escaneando tablas y reconstruyendo CORE_COLUMNAS.',
-      'Sincronizando Metadata',
-      5
-    );
+    aerpToast('Escaneando tablas y reconstruyendo CORE_COLUMNAS.', 'Sincronizando Metadata', 5);
 
     const result = runSincronizarMetadata();
 
@@ -144,11 +121,7 @@ function menuSincronizarMetadata() {
       ].join('\n'),
       'Metadata sincronizada'
     );
-
   } catch (error) {
-    aerpError(
-      error && error.message ? error.message : error,
-      'Sincronización interrumpida'
-    );
+    aerpError(error && error.message ? error.message : error, 'Sincronización interrumpida');
   }
 }

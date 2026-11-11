@@ -47,7 +47,13 @@
     "AERP-036_AuthorizationEngine.js",
     "AERP-038A_MetadataBuilderEnterprise.js",
     "AERP-040_CommercialBlueprint.js",
-    "AERP-040_CommercialPresentationManifest.js"
+    "AERP-040_CommercialPresentationManifest.js",
+    "AERP-041_IsolatedInstallerEngine.js",
+    "AERP-041_InstallerIntegration.js",
+    "AERP-041_AppSheetCoreReadinessValidator.js",
+    "AERP-041_SecureBootstrap.js",
+    "AERP-041_AppsScriptRuntimeAdapter.js",
+    "AERP-041_OperationalController.js"
   ],
   "excludedJavaScriptFiles": [
     "09_Tests.js",
@@ -57,14 +63,30 @@
     "AERP-038B_SingleMetadataBuildConsumerIntegration.test.js",
     "AERP-038B_SingleMetadataBuildOperationalIntegration.test.js",
     "AERP-038B_SingleMetadataBuildPipelineIntegration.test.js",
-    "eslint.config.js"
+    "AERP-041_IsolatedInstallerEngine.test.js",
+    "AERP-041_InstallerIntegration.test.js",
+    "eslint.config.js",
+    "AERP-041_AppsScriptRuntimeAdapter.test.js",
+    "AERP-041_OperationalController.test.js"
   ],
   "requiredEntrypoints": [
     "runGenerarERP",
     "aerpRunBuildPipeline",
     "aerpRunBuildWorkflow",
     "aerpAuthorize",
-    "aerpAuthorizeEnterprise"
+    "aerpAuthorizeEnterprise",
+    "aerpCreateIsolatedInstallerEngine",
+    "aerpCreateIsolatedInstallerIntegration",
+    "aerpCreateCommercialInstallerCoordinator",
+    "aerpCreateAppSheetCoreReadinessValidator",
+    "aerpCreateAppsScriptSecureBootstrap",
+    "aerpCreateSecureAppsScriptInstaller",
+    "aerpCreateAppsScriptInstallerRuntime",
+    "aerpCreateOperationalInstallerController",
+    "aerpCreateAppsScriptOperationalInstallerController",
+    "menuAerp041SecureInstall",
+    "menuAerp041CompleteAppSheetCore",
+    "menuAerp041SecureStatus"
   ],
   "embeddedTestEntrypoints": {
     "prefixes": ["test", "runTest"],

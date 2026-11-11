@@ -62,19 +62,10 @@ function aerpBuildReport() {
       sheet: sheetName,
       metrics: metrics
     };
-
   } catch (error) {
-    const message =
-      error && error.message
-        ? error.message
-        : String(error);
+    const message = error && error.message ? error.message : String(error);
 
-    Logger.log(
-      'Build Report falló en [' +
-      stage +
-      ']: ' +
-      message
-    );
+    Logger.log('Build Report falló en [' + stage + ']: ' + message);
 
     return {
       ok: false,
@@ -93,22 +84,15 @@ function aerpBuildReport() {
 function aerpGetBuildReportMetrics_() {
   const ss = aerpGetSpreadsheet();
 
-  const coreTablas = aerpGetTable(
-    AERP_SHEETS.CORE_TABLAS
-  );
+  const coreTablas = aerpGetTable(AERP_SHEETS.CORE_TABLAS);
 
-  const coreColumnas = aerpGetTable(
-    AERP_SHEETS.CORE_COLUMNAS
-  );
+  const coreColumnas = aerpGetTable(AERP_SHEETS.CORE_COLUMNAS);
 
-  const totalTables =
-    aerpCountBuildReportRows_(coreTablas.rows);
+  const totalTables = aerpCountBuildReportRows_(coreTablas.rows);
 
-  const totalColumns =
-    aerpCountBuildReportRows_(coreColumnas.rows);
+  const totalColumns = aerpCountBuildReportRows_(coreColumnas.rows);
 
-  const deploySheet =
-    ss.getSheetByName('AERP_DEPLOY_LOG');
+  const deploySheet = ss.getSheetByName('AERP_DEPLOY_LOG');
 
   let buildDate = new Date();
   let buildStatus = 'SUCCESS';
@@ -121,28 +105,15 @@ function aerpGetBuildReportMetrics_() {
   let errors = 0;
   let durationMs = 0;
 
-  if (
-    deploySheet &&
-    deploySheet.getLastRow() > 1
-  ) {
+  if (deploySheet && deploySheet.getLastRow() > 1) {
     const lastRow = deploySheet.getLastRow();
     const lastColumn = deploySheet.getLastColumn();
 
-    const values = deploySheet
-      .getRange(
-        lastRow,
-        1,
-        1,
-        lastColumn
-      )
-      .getValues()[0];
+    const values = deploySheet.getRange(lastRow, 1, 1, lastColumn).getValues()[0];
 
     buildDate = values[0] || buildDate;
 
-    buildStatus =
-      String(values[1] || '').toUpperCase() === 'OK'
-        ? 'SUCCESS'
-        : 'FAILED';
+    buildStatus = String(values[1] || '').toUpperCase() === 'OK' ? 'SUCCESS' : 'FAILED';
 
     forms = Number(values[4] || forms);
     views = Number(values[5] || views);
@@ -151,10 +122,7 @@ function aerpGetBuildReportMetrics_() {
     warnings = Number(values[7] || 0);
     durationMs = Number(values[8] || 0);
 
-    errors =
-      buildStatus === 'SUCCESS'
-        ? 0
-        : 1;
+    errors = buildStatus === 'SUCCESS' ? 0 : 1;
   }
 
   return {
@@ -176,8 +144,7 @@ function aerpGetBuildReportMetrics_() {
     errors: errors,
 
     durationMs: durationMs,
-    durationText:
-      aerpFormatDuration_(durationMs)
+    durationText: aerpFormatDuration_(durationMs)
   };
 }
 
@@ -185,13 +152,9 @@ function aerpGetBuildReportMetrics_() {
  * Cuenta únicamente filas que contienen datos.
  */
 function aerpCountBuildReportRows_(rows) {
-  return (rows || []).filter(function(row) {
-    return row.some(function(value) {
-      const normalized =
-        value === null ||
-        value === undefined
-          ? ''
-          : String(value).trim();
+  return (rows || []).filter(function (row) {
+    return row.some(function (value) {
+      const normalized = value === null || value === undefined ? '' : String(value).trim();
 
       return normalized !== '';
     });
@@ -211,7 +174,8 @@ function aerpPrepareBuildReportSheet_(sheet) {
     sheet.setRowHeight(row, 28);
   }
 
-  sheet.getRange('A1:H42')
+  sheet
+    .getRange('A1:H42')
     .setFontFamily('Arial')
     .setVerticalAlignment('middle')
     .setBackground('#FFFFFF');
@@ -221,76 +185,43 @@ function aerpPrepareBuildReportSheet_(sheet) {
  * Dibuja todo el contenido del reporte.
  */
 function aerpRenderBuildReport_(sheet, metrics) {
-  aerpRenderBuildReportHeader_(
-    sheet,
-    metrics
-  );
+  aerpRenderBuildReportHeader_(sheet, metrics);
 
-  aerpRenderBuildReportStatus_(
-    sheet,
-    metrics
-  );
+  aerpRenderBuildReportStatus_(sheet, metrics);
 
-  aerpRenderBuildReportExecutiveSummary_(
-    sheet,
-    metrics
-  );
+  aerpRenderBuildReportExecutiveSummary_(sheet, metrics);
 
-  aerpRenderBuildReportMetrics_(
-    sheet,
-    metrics
-  );
+  aerpRenderBuildReportMetrics_(sheet, metrics);
 
-  aerpRenderBuildReportTechnicalInfo_(
-    sheet,
-    metrics
-  );
+  aerpRenderBuildReportTechnicalInfo_(sheet, metrics);
 
-  aerpRenderBuildReportFooter_(
-    sheet
-  );
+  aerpRenderBuildReportFooter_(sheet);
 }
 
 /**
  * Cabecera del reporte.
  */
-function aerpRenderBuildReportHeader_(
-  sheet,
-  metrics
-) {
-  const titleRange =
-    sheet.getRange('A1:H3');
+function aerpRenderBuildReportHeader_(sheet, metrics) {
+  const titleRange = sheet.getRange('A1:H3');
 
   titleRange.merge();
 
   titleRange
     .setValue('🚀 ' + metrics.product)
-    .setBackground(
-      AERP_UI.COLORS.PRIMARY
-    )
-    .setFontColor(
-      AERP_UI.COLORS.TEXT_LIGHT
-    )
+    .setBackground(AERP_UI.COLORS.PRIMARY)
+    .setFontColor(AERP_UI.COLORS.TEXT_LIGHT)
     .setFontSize(24)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
 
-  const subtitleRange =
-    sheet.getRange('A4:H4');
+  const subtitleRange = sheet.getRange('A4:H4');
 
   subtitleRange.merge();
 
   subtitleRange
-    .setValue(
-      'Generation Report | ' +
-      metrics.edition
-    )
-    .setBackground(
-      AERP_UI.COLORS.SECONDARY
-    )
-    .setFontColor(
-      AERP_UI.COLORS.TEXT_LIGHT
-    )
+    .setValue('Generation Report | ' + metrics.edition)
+    .setBackground(AERP_UI.COLORS.SECONDARY)
+    .setFontColor(AERP_UI.COLORS.TEXT_LIGHT)
     .setFontSize(12)
     .setHorizontalAlignment('center');
 }
@@ -298,32 +229,17 @@ function aerpRenderBuildReportHeader_(
 /**
  * Estado principal.
  */
-function aerpRenderBuildReportStatus_(
-  sheet,
-  metrics
-) {
-  const success =
-    metrics.status === 'SUCCESS';
+function aerpRenderBuildReportStatus_(sheet, metrics) {
+  const success = metrics.status === 'SUCCESS';
 
-  const statusRange =
-    sheet.getRange('A6:H8');
+  const statusRange = sheet.getRange('A6:H8');
 
   statusRange.merge();
 
   statusRange
-    .setValue(
-      success
-        ? '✅ BUILD COMPLETADO'
-        : '❌ BUILD CON ERRORES'
-    )
-    .setBackground(
-      success
-        ? AERP_UI.COLORS.SUCCESS
-        : AERP_UI.COLORS.ERROR
-    )
-    .setFontColor(
-      AERP_UI.COLORS.TEXT_LIGHT
-    )
+    .setValue(success ? '✅ BUILD COMPLETADO' : '❌ BUILD CON ERRORES')
+    .setBackground(success ? AERP_UI.COLORS.SUCCESS : AERP_UI.COLORS.ERROR)
+    .setFontColor(AERP_UI.COLORS.TEXT_LIGHT)
     .setFontSize(20)
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
@@ -332,20 +248,12 @@ function aerpRenderBuildReportStatus_(
 /**
  * Resumen ejecutivo.
  */
-function aerpRenderBuildReportExecutiveSummary_(
-  sheet,
-  metrics
-) {
+function aerpRenderBuildReportExecutiveSummary_(sheet, metrics) {
   const date = new Date(metrics.buildDate);
 
-  const dateText =
-    isNaN(date.getTime())
-      ? 'Fecha no disponible'
-      : Utilities.formatDate(
-          date,
-          Session.getScriptTimeZone(),
-          'dd/MM/yyyy HH:mm:ss'
-        );
+  const dateText = isNaN(date.getTime())
+    ? 'Fecha no disponible'
+    : Utilities.formatDate(date, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
 
   const labels = [
     ['A10:B10', 'Producto'],
@@ -363,37 +271,32 @@ function aerpRenderBuildReportExecutiveSummary_(
     ['C14:H14', metrics.status]
   ];
 
-  labels.forEach(function(item) {
+  labels.forEach(function (item) {
     const range = sheet.getRange(item[0]);
 
-    range.merge()
+    range
+      .merge()
       .setValue(item[1])
       .setBackground('#E8EFEA')
       .setFontWeight('bold')
-      .setFontColor(
-        AERP_UI.COLORS.TEXT_DARK
-      );
+      .setFontColor(AERP_UI.COLORS.TEXT_DARK);
   });
 
-  values.forEach(function(item) {
+  values.forEach(function (item) {
     const range = sheet.getRange(item[0]);
 
-    range.merge()
+    range
+      .merge()
       .setValue(item[1])
       .setHorizontalAlignment('left')
-      .setFontColor(
-        AERP_UI.COLORS.TEXT_DARK
-      );
+      .setFontColor(AERP_UI.COLORS.TEXT_DARK);
   });
 }
 
 /**
  * Métricas principales.
  */
-function aerpRenderBuildReportMetrics_(
-  sheet,
-  metrics
-) {
+function aerpRenderBuildReportMetrics_(sheet, metrics) {
   const cards = [
     ['A17:B20', '📋 TABLAS', metrics.tables],
     ['C17:D20', '🧩 COLUMNAS', metrics.columns],
@@ -403,80 +306,45 @@ function aerpRenderBuildReportMetrics_(
     ['A22:B25', '🧭 MENÚS', metrics.menus],
     ['C22:D25', '⚠️ WARNINGS', metrics.warnings],
     ['E22:F25', '❌ ERRORES', metrics.errors],
-    [
-      'G22:H25',
-      '⏱️ DURACIÓN',
-      metrics.durationText
-    ]
+    ['G22:H25', '⏱️ DURACIÓN', metrics.durationText]
   ];
 
-  cards.forEach(function(card) {
-    aerpRenderBuildReportCard_(
-      sheet,
-      card[0],
-      card[1],
-      card[2]
-    );
+  cards.forEach(function (card) {
+    aerpRenderBuildReportCard_(sheet, card[0], card[1], card[2]);
   });
 }
 
 /**
  * Tarjeta de métrica.
  */
-function aerpRenderBuildReportCard_(
-  sheet,
-  rangeA1,
-  title,
-  value
-) {
+function aerpRenderBuildReportCard_(sheet, rangeA1, title, value) {
   const range = sheet.getRange(rangeA1);
 
   range.merge();
 
   range
-    .setValue(
-      title +
-      '\n\n' +
-      value
-    )
-    .setBackground(
-      AERP_UI.COLORS.BACKGROUND
-    )
-    .setFontColor(
-      AERP_UI.COLORS.TEXT_DARK
-    )
+    .setValue(title + '\n\n' + value)
+    .setBackground(AERP_UI.COLORS.BACKGROUND)
+    .setFontColor(AERP_UI.COLORS.TEXT_DARK)
     .setFontWeight('bold')
     .setFontSize(14)
     .setHorizontalAlignment('center')
     .setWrap(true);
 
-  range.setBorder(
-    true,
-    true,
-    true,
-    true,
-    false,
-    false
-  );
+  range.setBorder(true, true, true, true, false, false);
 }
 
 /**
  * Información técnica y trazabilidad.
  */
-function aerpRenderBuildReportTechnicalInfo_(
-  sheet,
-  metrics
-) {
-  const titleRange =
-    sheet.getRange('A28:H29');
+function aerpRenderBuildReportTechnicalInfo_(sheet, metrics) {
+  const titleRange = sheet.getRange('A28:H29');
 
   titleRange.merge();
 
   titleRange
     .setValue('Información técnica')
-    .setBackground(
-      AERP_UI.COLORS.ACCENT
-    )
+    .setBackground(AERP_UI.COLORS.ACCENT)
     .setFontWeight('bold')
     .setFontSize(14)
     .setHorizontalAlignment('center');
@@ -492,25 +360,20 @@ function aerpRenderBuildReportTechnicalInfo_(
     ['C31:H31', metrics.engine],
     ['C32:H32', 'Metadata Driven Architecture'],
     ['C33:H33', 'Google AppSheet'],
-    [
-      'C34:H34',
-      'Metadata → Generator → Package → Deployment'
-    ]
+    ['C34:H34', 'Metadata → Generator → Package → Deployment']
   ];
 
-  technicalData.forEach(function(item) {
-    sheet.getRange(item[0])
+  technicalData.forEach(function (item) {
+    sheet
+      .getRange(item[0])
       .merge()
       .setValue(item[1])
       .setBackground('#E8EFEA')
       .setFontWeight('bold');
   });
 
-  technicalValues.forEach(function(item) {
-    sheet.getRange(item[0])
-      .merge()
-      .setValue(item[1])
-      .setWrap(true);
+  technicalValues.forEach(function (item) {
+    sheet.getRange(item[0]).merge().setValue(item[1]).setWrap(true);
   });
 }
 
@@ -518,22 +381,14 @@ function aerpRenderBuildReportTechnicalInfo_(
  * Pie institucional.
  */
 function aerpRenderBuildReportFooter_(sheet) {
-  const footerRange =
-    sheet.getRange('A38:H40');
+  const footerRange = sheet.getRange('A38:H40');
 
   footerRange.merge();
 
   footerRange
-    .setValue(
-      'Reporte generado automáticamente por Alef ERP\n' +
-      'Powered by Alef Engineering'
-    )
-    .setBackground(
-      AERP_UI.COLORS.PRIMARY
-    )
-    .setFontColor(
-      AERP_UI.COLORS.TEXT_LIGHT
-    )
+    .setValue('Reporte generado automáticamente por Alef ERP\n' + 'Powered by Alef Engineering')
+    .setBackground(AERP_UI.COLORS.PRIMARY)
+    .setFontColor(AERP_UI.COLORS.TEXT_LIGHT)
     .setFontStyle('italic')
     .setHorizontalAlignment('center')
     .setWrap(true);
@@ -545,26 +400,19 @@ function aerpRenderBuildReportFooter_(sheet) {
 function testBuildReport() {
   const result = aerpBuildReport();
 
-  Logger.log(
-    JSON.stringify(result, null, 2)
-  );
+  Logger.log(JSON.stringify(result, null, 2));
 
   if (!result.ok) {
-    throw new Error(
-      'Build Report falló en la etapa [' +
-      result.stage +
-      ']: ' +
-      result.message
-    );
+    throw new Error('Build Report falló en la etapa [' + result.stage + ']: ' + result.message);
   }
 
   Logger.log(
     'Build Report OK | ' +
-    result.metrics.tables +
-    ' tablas | ' +
-    result.metrics.columns +
-    ' columnas | ' +
-    result.metrics.status
+      result.metrics.tables +
+      ' tablas | ' +
+      result.metrics.columns +
+      ' columnas | ' +
+      result.metrics.status
   );
 
   return result;

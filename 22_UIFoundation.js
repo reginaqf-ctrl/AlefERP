@@ -72,8 +72,7 @@ function aerpGetUI_() {
  * Construye el título oficial de un diálogo.
  */
 function aerpBuildTitle_(icon, title) {
-  return icon + ' ' + AERP_UI.APP_NAME +
-    (title ? ' | ' + title : '');
+  return icon + ' ' + AERP_UI.APP_NAME + (title ? ' | ' + title : '');
 }
 
 /**
@@ -167,11 +166,7 @@ function aerpToast(message, title, seconds) {
  * Notificación de inicio del proceso Generar ERP.
  */
 function aerpBuildStartedToast() {
-  aerpToast(
-    AERP_MESSAGES.BUILD_START,
-    'Generando ERP',
-    5
-  );
+  aerpToast(AERP_MESSAGES.BUILD_START, 'Generando ERP', 5);
 }
 
 /**
@@ -198,14 +193,9 @@ function aerpBuildSuccessDialog(summary) {
  * Muestra los errores del proceso Generar ERP.
  */
 function aerpBuildErrorDialog(error) {
-  const message = error && error.message
-    ? error.message
-    : aerpNormalizeMessage_(error);
+  const message = error && error.message ? error.message : aerpNormalizeMessage_(error);
 
-  aerpError(
-    AERP_MESSAGES.BUILD_ERROR + '\n\n' + message,
-    'Generación interrumpida'
-  );
+  aerpError(AERP_MESSAGES.BUILD_ERROR + '\n\n' + message, 'Generación interrumpida');
 }
 
 /**
@@ -227,7 +217,7 @@ function aerpFormatDuration_(durationMs) {
 function aerpBuildSummaryMessage_(title, values) {
   const lines = [title || 'Resumen', ''];
 
-  Object.keys(values || {}).forEach(function(key) {
+  Object.keys(values || {}).forEach(function (key) {
     lines.push(key + ': ' + values[key]);
   });
 
@@ -259,11 +249,7 @@ function testUIFoundation() {
  * Debe ejecutarse desde el menú de Google Sheets.
  */
 function demoUIFoundation() {
-  aerpToast(
-    'Probando la identidad visual de Alef ERP.',
-    'UI Foundation',
-    3
-  );
+  aerpToast('Probando la identidad visual de Alef ERP.', 'UI Foundation', 3);
 
   aerpSuccess(
     [

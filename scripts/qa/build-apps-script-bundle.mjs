@@ -60,8 +60,10 @@ const APPS_SCRIPT_MANIFEST_KEYS = Object.freeze([
   'timeZone'
 ]);
 const EXPECTED_OAUTH_SCOPES = Object.freeze([
+  'openid',
   'https://www.googleapis.com/auth/script.container.ui',
-  'https://www.googleapis.com/auth/spreadsheets.currentonly'
+  'https://www.googleapis.com/auth/spreadsheets.currentonly',
+  'https://www.googleapis.com/auth/userinfo.email'
 ]);
 const FORBIDDEN_OAUTH_SERVICE_GLOBALS = new Set([
   'CalendarApp',
